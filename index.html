@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KUBIXSIO TOOLS</title>
+  <style>
+    :root{
+      color-scheme: dark;
+      --bg:#15171b; --panel:#1d2026; --panel2:#252932; --text:#f3f5f7;
+      --muted:#9aa3ad; --border:#343a46; --accent:#686cff; --accent2:#8d74ff;
+      --ok:#79d69a; --warn:#f1c66d; --bad:#ff7474;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+    body{padding:14px}
+    .wrap{max-width:430px;margin:0 auto}
+    .head{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+    .logo{
+      width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+      display:grid;place-items:center;font-weight:900;font-size:18px;box-shadow:0 5px 18px #0006
+    }
+    h1{font-size:19px;margin:0;letter-spacing:.5px}
+    .sub{font-size:12px;color:#aeb7c2;margin-top:3px}
+    .section{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:13px;margin-bottom:11px}
+    .section-title{font-size:11px;font-weight:800;letter-spacing:1.1px;color:#aeb7c2;margin:0 0 10px}
+    .grid{display:grid;grid-template-columns:1fr;gap:9px}
+    button{
+      width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);
+      border-radius:10px;padding:12px 13px;font-size:14px;font-weight:800;cursor:pointer;text-align:left;
+      transition:.12s ease;
+    }
+    button:hover{border-color:#7076ff;transform:translateY(-1px);background:#292e38}
+    button:active{transform:translateY(0)}
+    button:disabled{opacity:.55;cursor:wait;transform:none}
+    .hint{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:5px}
+    .status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;padding:4px 3px 0}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+    .dot.busy{background:var(--warn)}
+    .dot.err{background:var(--bad)}
+    .footer{font-size:9px;color:#6f7883;text-align:center;margin-top:11px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo">K</div>
+    <div>
+      <h1>KUBIXSIO TOOLS</h1>
+      <div class="sub">Szybkie narzędzia do Photopea</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">POSTAĆ</div>
+    <div class="grid">
+      <button id="autoBtn" onclick="runCharacterAuto()">
+        ✦ AUTO OBRÓBKA POSTACI
+        <span class="hint">Camera Raw • krawędzie • Linear Dodge • maska</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">EFEKTY FINALNE</div>
+    <div class="grid">
+      <button onclick="runBloom()">
+        ✨ BLOOM
+        <span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span>
+      </button>
+
+      <button onclick="runSharpen()">
+        ◈ SHARPEN
+        <span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="status">
+    <span id="dot" class="dot"></span>
+    <span id="status">Panel gotowy</span>
+  </div>
+
+  <div class="footer">KUBIXSIO TOOLS • v5</div>
+</div>
+
+<script>
+  const ATN_URL = "https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn";
+
+  let autoState = "idle";
+  let needLoad = false;
+
+  function setStatus(text, mode) {
+    document.getElementById("status").textContent = text;
+    document.getElementById("dot").className = "dot" + (mode ? " " + mode : "");
+  }
+
+  function setAutoBusy(busy) {
+    document.getElementById("autoBtn").disabled = busy;
+  }
+
+  function postScript(script) {
+    window.parent.postMessage(script, "*");
+  }
+
+  function tryAutoAction() {
+    const script = `
+      try {
+        app.doAction("OBRÓBKA POSTACI", "Kubixsio");
+        app.echoToOE("KTX_AUTO_OK");
+      }
+      catch(e) {
+        app.echoToOE("KTX_AUTO_MISSING");
+      }
+    `;
+    postScript(script);
+  }
+
+  function loadATN() {
+    const script = `
+      try {
+        app.open("${ATN_URL}");
+      }
+      catch(e) {
+        app.echoToOE("KTX_ATN_ERROR|" + e.toString());
+      }
+    `;
+    postScript(script);
+  }
+
+  function runCharacterAuto() {
+    if (autoState !== "idle") return;
+
+    setAutoBusy(true);
+    needLoad = false;
+    autoState = "trying";
+    setStatus("Uruchamiam obróbkę postaci...", "busy");
+    tryAutoAction();
+  }
+
+  function runBloom() {
+    setStatus("Tworzę BLOOM...", "busy");
+    const script = `
+      try {
+        var doc = app.activeDocument;
+        doc.selection.selectAll();
+        doc.selection.copy(true);
+        var layer = doc.paste();
+        layer.name = "BLOOM";
+        doc.selection.deselect();
+        layer.applyGaussianBlur(10);
+        layer.blendMode = BlendMode.SCREEN;
+        layer.opacity = 20;
+        app.echoToOE("KTX_BLOOM_OK");
+      }
+      catch(e) {
+        app.echoToOE("KTX_ERROR|BLOOM|" + e.toString());
+      }
+    `;
+    postScript(script);
+  }
+
+  function runSharpen() {
+    setStatus("Tworzę SHARPEN...", "busy");
+    const script = `
+      try {
+        var doc = app.activeDocument;
+        doc.selection.selectAll();
+        doc.selection.copy(true);
+        var layer = doc.paste();
+        layer.name = "SHARPEN";
+        doc.selection.deselect();
+        layer.applyHighPass(2);
+        layer.blendMode = BlendMode.OVERLAY;
+        layer.opacity = 55;
+        app.echoToOE("KTX_SHARPEN_OK");
+      }
+      catch(e) {
+        app.echoToOE("KTX_ERROR|SHARPEN|" + e.toString());
+      }
+    `;
+    postScript(script);
+  }
+
+  window.addEventListener("message", function(e) {
+    const data = e.data;
+
+    if (typeof data === "string") {
+      if (data === "KTX_AUTO_OK") {
+        autoState = "idle";
+        needLoad = false;
+        setAutoBusy(false);
+        setStatus("Obróbka postaci gotowa", "");
+        return;
+      }
+
+      if (data === "KTX_AUTO_MISSING") {
+        if (autoState === "trying") {
+          // Nie wysyłamy ATN od razu. Najpierw czekamy na "done"
+          // kończące pierwszą próbę, żeby zachować prawidłową kolejność.
+          needLoad = true;
+          setStatus("Nie ma operacji — wczytuję Kubixsio.atn...", "busy");
+          return;
+        }
+
+        if (autoState === "retrying") {
+          autoState = "idle";
+          needLoad = false;
+          setAutoBusy(false);
+          setStatus("Nie udało się uruchomić OBRÓBKA POSTACI", "err");
+          return;
+        }
+      }
+
+      if (data.indexOf("KTX_ATN_ERROR|") === 0) {
+        autoState = "idle";
+        needLoad = false;
+        setAutoBusy(false);
+        setStatus("Nie udało się wczytać Kubixsio.atn", "err");
+        return;
+      }
+
+      if (data === "KTX_BLOOM_OK") {
+        setStatus("Bloom gotowy", "");
+        return;
+      }
+
+      if (data === "KTX_SHARPEN_OK") {
+        setStatus("Sharpen gotowy", "");
+        return;
+      }
+
+      if (data.indexOf("KTX_ERROR|") === 0) {
+        setStatus("Błąd przy wykonywaniu efektu", "err");
+        return;
+      }
+
+      if (data === "done") {
+        if (autoState === "trying" && needLoad) {
+          needLoad = false;
+          autoState = "loading";
+          loadATN();
+          return;
+        }
+
+        if (autoState === "loading") {
+          autoState = "retrying";
+          setStatus("Operacja wczytana — uruchamiam...", "busy");
+          tryAutoAction();
+          return;
+        }
+      }
+    }
+  });
+</script>
+</body>
+</html>
