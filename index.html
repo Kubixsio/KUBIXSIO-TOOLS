@@ -5,26 +5,432 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KUBIXSIO TOOLS</title>
   <style>
-    html,body{margin:0;min-height:100%;background:#15171b;color:#f3f5f7;font-family:Arial,Helvetica,sans-serif}
-    body{display:grid;place-items:center;padding:18px}
-    .box{font-size:12px;color:#9aa3ad;text-align:center}
+    :root{
+      color-scheme: dark;
+      --bg:#15171b;
+      --panel:#1d2026;
+      --panel2:#252932;
+      --text:#f3f5f7;
+      --muted:#9aa3ad;
+      --border:#343a46;
+      --accent:#686cff;
+      --accent2:#8d74ff;
+      --ok:#79d69a;
+      --warn:#f1c66d;
+      --bad:#ff7474;
+    }
+    *{box-sizing:border-box}
+    html,body{
+      margin:0;
+      min-height:100%;
+      background:var(--bg);
+      font-family:Arial,Helvetica,sans-serif;
+      color:var(--text)
+    }
+    body{padding:14px}
+    .wrap{max-width:430px;margin:0 auto}
+    .head{
+      display:flex;
+      align-items:center;
+      gap:11px;
+      margin-bottom:14px
+    }
+    .logo{
+      width:42px;
+      height:42px;
+      border-radius:11px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      display:grid;
+      place-items:center;
+      font-weight:900;
+      font-size:18px;
+      box-shadow:0 5px 18px #0006
+    }
+    h1{
+      font-size:19px;
+      margin:0;
+      letter-spacing:.5px
+    }
+    .sub{
+      font-size:12px;
+      color:#aeb7c2;
+      margin-top:3px
+    }
+    .section{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:13px;
+      padding:13px;
+      margin-bottom:11px
+    }
+    .section-title{
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:1.1px;
+      color:#aeb7c2;
+      margin:0 0 10px
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:9px
+    }
+    button{
+      width:100%;
+      border:1px solid var(--border);
+      background:var(--panel2);
+      color:var(--text);
+      border-radius:10px;
+      padding:12px 13px;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      text-align:left;
+      transition:.12s ease
+    }
+    button:hover{
+      border-color:#7076ff;
+      background:#292e38
+    }
+    button:disabled{
+      opacity:.55;
+      cursor:wait
+    }
+    .hint{
+      display:block;
+      font-weight:400;
+      color:var(--muted);
+      font-size:10px;
+      margin-top:5px
+    }
+    .status{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      color:var(--muted);
+      font-size:11px;
+      padding:4px 3px 0
+    }
+    .dot{
+      width:8px;
+      height:8px;
+      border-radius:50%;
+      background:var(--ok);
+      flex:none
+    }
+    .dot.busy{background:var(--warn)}
+    .dot.err{background:var(--bad)}
+    .footer{
+      font-size:9px;
+      color:#6f7883;
+      text-align:center;
+      margin-top:11px
+    }
   </style>
 </head>
 <body>
-  <div class="box">Ładowanie KUBIXSIO TOOLS…</div>
-  <script>
-    (async function(){
+<div class="wrap">
+  <div class="head">
+    <div class="logo">K</div>
+    <div>
+      <h1>KUBIXSIO TOOLS</h1>
+      <div class="sub">Szybkie narzędzia do Photopea</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">POSTAĆ</div>
+    <div class="grid">
+      <button id="autoBtn" onclick="runCharacterAuto()">
+        ✦ AUTO OBRÓBKA POSTACI
+        <span class="hint">Przy pierwszym użyciu wczyta Kubixsio.atn, potem odpala od razu</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">EFEKTY FINALNE</div>
+    <div class="grid">
+      <button onclick="runBloom()">
+        ✨ BLOOM
+        <span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span>
+      </button>
+      <button onclick="runSharpen()">
+        ◈ SHARPEN
+        <span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">LOOK</div>
+    <div class="grid">
+      <button onclick="runVignette()">
+        ◉ WINIETA
+        <span class="hint">Grupa WINIETA • warstwa STANDARD • krycie 20%</span>
+      </button>
+      <button onclick="runFinalLook()">
+        ◌ FINAL LOOK
+        <span class="hint">Grupa FINAL LOOK • KRZYWE • krycie grupy 70%</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="status">
+    <span id="dot" class="dot"></span>
+    <span id="status">Panel gotowy</span>
+  </div>
+
+  <div class="footer">KUBIXSIO TOOLS • v8</div>
+</div>
+
+<script>
+const ATN_URL = "https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn";
+
+let atnReady = false;
+let autoStage = "idle"; // idle | loading | running
+
+function setStatus(text, mode){
+  document.getElementById("status").textContent = text;
+  document.getElementById("dot").className = "dot" + (mode ? " " + mode : "");
+}
+function setAutoBusy(v){
+  document.getElementById("autoBtn").disabled = v;
+}
+function postScript(script){
+  window.parent.postMessage(script, "*");
+}
+
+function sendAutoAction(){
+  autoStage = "running";
+  setStatus("Uruchamiam obróbkę postaci...", "busy");
+  postScript('app.doAction("OBRÓBKA POSTACI", "Kubixsio");');
+}
+
+function runCharacterAuto(){
+  if(autoStage !== "idle") return;
+  setAutoBusy(true);
+
+  if(atnReady){
+    sendAutoAction();
+  }else{
+    autoStage = "loading";
+    setStatus("Wczytuję operację...", "busy");
+    postScript('app.open("' + ATN_URL + '");');
+  }
+}
+
+function runBloom(){
+  setStatus("Tworzę BLOOM...", "busy");
+  postScript(`
+    (function(){
       try{
-        const res = await fetch('./app.html?cb=' + Date.now(), {cache:'no-store'});
-        if(!res.ok) throw new Error('HTTP ' + res.status);
-        const html = await res.text();
-        document.open();
-        document.write(html);
-        document.close();
+        var doc = app.activeDocument;
+        doc.selection.selectAll();
+        doc.selection.copy(true);
+        var layer = doc.paste();
+        layer.name = "BLOOM";
+        doc.selection.deselect();
+        layer.applyGaussianBlur(10);
+        layer.blendMode = BlendMode.SCREEN;
+        layer.opacity = 20;
+        app.echoToOE("KTX_OK|BLOOM");
       }catch(e){
-        document.body.innerHTML = '<div class="box">Nie udało się załadować panelu.<br>' + String(e) + '</div>';
+        app.echoToOE("KTX_ERR|BLOOM|" + e);
       }
     })();
-  </script>
+  `);
+}
+
+function runSharpen(){
+  setStatus("Tworzę SHARPEN...", "busy");
+  postScript(`
+    (function(){
+      try{
+        var doc = app.activeDocument;
+        doc.selection.selectAll();
+        doc.selection.copy(true);
+        var layer = doc.paste();
+        layer.name = "SHARPEN";
+        doc.selection.deselect();
+        layer.applyHighPass(2);
+        layer.blendMode = BlendMode.OVERLAY;
+        layer.opacity = 55;
+        app.echoToOE("KTX_OK|SHARPEN");
+      }catch(e){
+        app.echoToOE("KTX_ERR|SHARPEN|" + e);
+      }
+    })();
+  `);
+}
+
+function runVignette(){
+  setStatus("Tworzę WINIETĘ...", "busy");
+  postScript(`
+    (function(){
+      try{
+        var doc = app.activeDocument;
+
+        function px(v){
+          try { return v.as("px"); } catch(e){}
+          try { return v.value; } catch(e){}
+          return Number(v);
+        }
+
+        function ellipsePoints(cx, cy, rx, ry, steps){
+          var pts = [];
+          for(var i = 0; i < steps; i++){
+            var a = Math.PI * 2 * i / steps;
+            pts.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+          }
+          return pts;
+        }
+
+        var w = px(doc.width);
+        var h = px(doc.height);
+
+        var group = doc.layerSets.add();
+        group.name = "WINIETA";
+
+        var layer = doc.artLayers.add();
+        layer.name = "STANDARD";
+        doc.activeLayer = layer;
+        layer.move(group, ElementPlacement.INSIDE);
+
+        var black = new SolidColor();
+        black.rgb.red = 0;
+        black.rgb.green = 0;
+        black.rgb.blue = 0;
+
+        doc.selection.selectAll();
+        doc.selection.fill(black);
+        doc.selection.deselect();
+
+        var rx = w * 0.34;
+        var ry = h * 0.34;
+        var pts = ellipsePoints(w/2, h/2, rx, ry, 72);
+
+        doc.selection.select(pts, SelectionType.REPLACE, 0, true);
+        doc.selection.feather(Math.round(Math.min(w, h) * 0.12));
+        doc.selection.clear();
+        doc.selection.deselect();
+
+        layer.opacity = 20;
+
+        app.echoToOE("KTX_OK|WINIETA");
+      }catch(e){
+        app.echoToOE("KTX_ERR|WINIETA|" + e);
+      }
+    })();
+  `);
+}
+
+function runFinalLook(){
+  setStatus("Tworzę FINAL LOOK...", "busy");
+  postScript(`
+    (function(){
+      try{
+        var doc = app.activeDocument;
+
+        var group = doc.layerSets.add();
+        group.name = "FINAL LOOK";
+        group.opacity = 70;
+
+        var idMk = charIDToTypeID("Mk  ");
+        var desc = new ActionDescriptor();
+        var ref = new ActionReference();
+        ref.putClass(charIDToTypeID("AdjL"));
+        desc.putReference(charIDToTypeID("null"), ref);
+
+        var usingDesc = new ActionDescriptor();
+        usingDesc.putString(charIDToTypeID("Nm  "), "KRZYWE");
+
+        var typeDesc = new ActionDescriptor();
+        var adjList = new ActionList();
+        var curveDesc = new ActionDescriptor();
+
+        var channelRef = new ActionReference();
+        channelRef.putEnumerated(
+          charIDToTypeID("Chnl"),
+          charIDToTypeID("Chnl"),
+          charIDToTypeID("Cmps")
+        );
+        curveDesc.putReference(charIDToTypeID("Chnl"), channelRef);
+
+        var pts = new ActionList();
+
+        function addPoint(x, y){
+          var p = new ActionDescriptor();
+          p.putDouble(charIDToTypeID("Hrzn"), x);
+          p.putDouble(charIDToTypeID("Vrtc"), y);
+          pts.putObject(charIDToTypeID("Pnt "), p);
+        }
+
+        addPoint(0, 0);
+        addPoint(62, 54);
+        addPoint(173, 184);
+        addPoint(255, 255);
+
+        curveDesc.putList(charIDToTypeID("Crv "), pts);
+        adjList.putObject(charIDToTypeID("CrvA"), curveDesc);
+        typeDesc.putList(charIDToTypeID("Adjs"), adjList);
+
+        usingDesc.putObject(charIDToTypeID("Type"), charIDToTypeID("Crvs"), typeDesc);
+        desc.putObject(charIDToTypeID("Usng"), charIDToTypeID("AdjL"), usingDesc);
+
+        executeAction(idMk, desc, DialogModes.NO);
+
+        var curveLayer = doc.activeLayer;
+        curveLayer.name = "KRZYWE";
+        curveLayer.move(group, ElementPlacement.INSIDE);
+
+        app.echoToOE("KTX_OK|FINALLOOK");
+      }catch(e){
+        app.echoToOE("KTX_ERR|FINALLOOK|" + e);
+      }
+    })();
+  `);
+}
+
+window.addEventListener("message", function(e){
+  var data = e.data;
+
+  if(data === "done"){
+    if(autoStage === "loading"){
+      atnReady = true;
+      sendAutoAction();
+      return;
+    }
+    if(autoStage === "running"){
+      autoStage = "idle";
+      setAutoBusy(false);
+      setStatus("Obróbka postaci gotowa", "");
+      return;
+    }
+    return;
+  }
+
+  if(typeof data !== "string") return;
+
+  if(data.indexOf("KTX_OK|") === 0){
+    var name = data.split("|")[1] || "";
+    var labels = {
+      BLOOM: "Bloom gotowy",
+      SHARPEN: "Sharpen gotowy",
+      WINIETA: "Winieta gotowa",
+      FINALLOOK: "Final Look gotowy"
+    };
+    setStatus(labels[name] || "Gotowe", "");
+    return;
+  }
+
+  if(data.indexOf("KTX_ERR|") === 0){
+    var parts = data.split("|");
+    var name = parts[1] || "SCRIPT";
+    setStatus("Błąd: " + name, "err");
+    return;
+  }
+});
+</script>
 </body>
 </html>
