@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KUBIXSIO TOOLS</title>
+  <style>
+    :root{
+      color-scheme: dark;
+      --bg:#15171b; --panel:#1d2026; --panel2:#252932; --text:#f3f5f7;
+      --muted:#9aa3ad; --border:#343a46; --accent:#5a8cff; --ok:#79d69a;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+    body{padding:14px}
+    .wrap{max-width:420px;margin:0 auto}
+    .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+    .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7c5cff);
+      display:grid;place-items:center;font-weight:800;font-size:15px;box-shadow:0 5px 18px #0006}
+    h1{font-size:16px;margin:0;letter-spacing:.6px}
+    .sub{font-size:11px;color:var(--muted);margin-top:3px}
+    .section{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+    .section-title{font-size:10px;font-weight:800;letter-spacing:1.1px;color:var(--muted);margin:0 0 10px}
+    .grid{display:grid;grid-template-columns:1fr;gap:8px}
+    button{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);
+      border-radius:9px;padding:11px 12px;font-size:13px;font-weight:700;cursor:pointer;text-align:left;transition:.12s ease}
+    button:hover{border-color:var(--accent);transform:translateY(-1px)}
+    button:active{transform:translateY(0);background:#20242c}
+    button .hint{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:4px}
+    .status{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px;padding:3px 2px 0}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+    .footer{font-size:9px;color:#6f7883;text-align:center;margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="logo">K</div>
+      <div>
+        <h1>KUBIXSIO TOOLS</h1>
+        <div class="sub">Szybkie narzędzia do Photopea</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">EFEKTY FINALNE</div>
+      <div class="grid">
+        <button onclick="runBloom()">
+          ✨ BLOOM
+          <span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span>
+        </button>
+
+        <button onclick="runSharpen()">
+          ◈ SHARPEN
+          <span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="status">
+      <span class="dot"></span>
+      <span id="status">Panel gotowy</span>
+    </div>
+
+    <div class="footer">KUBIXSIO TOOLS • v1</div>
+  </div>
+
+<script>
+  function sendToPhotopea(script, label){
+    document.getElementById("status").textContent = "Uruchamiam: " + label + "...";
+    window.parent.postMessage(script, "*");
+  }
+
+  function runBloom(){
+    const script = `
+      var doc = app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer = doc.paste();
+      layer.name = "BLOOM";
+      doc.selection.deselect();
+      layer.applyGaussianBlur(10);
+      layer.blendMode = BlendMode.SCREEN;
+      layer.opacity = 20;
+    `;
+    sendToPhotopea(script, "BLOOM");
+  }
+
+  function runSharpen(){
+    const script = `
+      var doc = app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer = doc.paste();
+      layer.name = "SHARPEN";
+      doc.selection.deselect();
+      layer.applyHighPass(2);
+      layer.blendMode = BlendMode.OVERLAY;
+      layer.opacity = 55;
+    `;
+    sendToPhotopea(script, "SHARPEN");
+  }
+
+  window.addEventListener("message", function(e){
+    if(e.data === "done"){
+      document.getElementById("status").textContent = "Gotowe";
+    }
+  });
+</script>
+</body>
+</html>
