@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KUBIXSIO TOOLS v3 DEBUG</title>
+<style>
+:root{color-scheme:dark;--bg:#15171b;--panel:#1d2026;--panel2:#252932;--text:#f3f5f7;--muted:#9aa3ad;--border:#343a46;--accent:#686cff;--ok:#79d69a;--warn:#f1c66d;--bad:#ff7474}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+body{padding:14px}.wrap{max-width:430px;margin:auto}.head{display:flex;gap:11px;align-items:center;margin-bottom:14px}
+.logo{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#686cff,#8d74ff);display:grid;place-items:center;font-weight:900;font-size:18px}
+h1{font-size:19px;margin:0}.sub{font-size:12px;color:#aeb7c2;margin-top:3px}
+.section{background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:13px;margin-bottom:11px}
+.section-title{font-size:11px;font-weight:800;letter-spacing:1.1px;color:#aeb7c2;margin-bottom:10px}
+.grid{display:grid;gap:9px}
+button{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:11px 13px;font-size:13px;font-weight:800;cursor:pointer;text-align:left}
+button:hover{border-color:var(--accent);background:#292e38}.hint{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:4px}
+.status{font-size:11px;color:var(--muted);margin:4px 3px 8px}.debug{background:#0e1013;border:1px solid var(--border);border-radius:9px;padding:9px;min-height:110px;max-height:220px;overflow:auto;white-space:pre-wrap;font:10px/1.45 Consolas,monospace;color:#cbd3dc}
+.footer{font-size:9px;color:#6f7883;text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo">K</div>
+    <div>
+      <h1>KUBIXSIO TOOLS</h1>
+      <div class="sub">v3 DEBUG — diagnostyka AUTO OBRÓBKI</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">TESTY</div>
+    <div class="grid">
+      <button onclick="testScript()">1. TEST POŁĄCZENIA
+        <span class="hint">Photopea powinna pokazać okno „Skrypt działa”</span>
+      </button>
+      <button onclick="loadATN()">2. WCZYTAJ KUBIXSIO.ATN
+        <span class="hint">Pobiera plik ATN z GitHub Pages i wysyła go do Photopea</span>
+      </button>
+      <button onclick="testAction()">3. TEST POSTAĆ - AUTO
+        <span class="hint">Próbuje uruchomić akcję i pokaże błąd bezpośrednio w Photopea</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">EFEKTY</div>
+    <div class="grid">
+      <button onclick="runBloom()">✨ BLOOM</button>
+      <button onclick="runSharpen()">◈ SHARPEN</button>
+    </div>
+  </div>
+
+  <div class="status" id="status">Panel gotowy.</div>
+  <div class="debug" id="debug">DEBUG START
+Wersja: v3 DEBUG
+</div>
+  <div class="footer">KUBIXSIO TOOLS • v3 DEBUG</div>
+</div>
+
+<script>
+const ATN_URL="./Kubixsio.atn";
+function log(s){const d=document.getElementById("debug");d.textContent+="\n"+s;d.scrollTop=d.scrollHeight}
+function status(s){document.getElementById("status").textContent=s;log("STATUS: "+s)}
+function sendScript(script,label){status("Wysyłam: "+label);window.parent.postMessage(script,"*")}
+
+function testScript(){
+  sendScript(`alert("KUBIXSIO TOOLS: Skrypt działa");`,"TEST POŁĄCZENIA");
+}
+
+async function loadATN(){
+  try{
+    status("Pobieram Kubixsio.atn...");
+    const r=await fetch(ATN_URL+"?v="+Date.now(),{cache:"no-store"});
+    log("HTTP ATN: "+r.status+" "+r.statusText);
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const b=await r.arrayBuffer();
+    log("Pobrano ATN: "+b.byteLength+" bajtów");
+    window.parent.postMessage(b,"*");
+    status("ATN wysłany do Photopea. Poczekaj na „done”.");
+  }catch(e){
+    status("BŁĄD ATN: "+e);
+  }
+}
+
+function testAction(){
+  const s=`
+    try {
+      var doc = app.activeDocument;
+      var lname = "BRAK";
+      try { lname = doc.activeLayer.name; } catch(ee) {}
+      alert("Aktywna warstwa: " + lname + "\\nPróbuję: POSTAĆ - AUTO / Kubixsio");
+      app.doAction("POSTAĆ - AUTO", "Kubixsio");
+      alert("AUTO: doAction zakończone bez wyjątku");
+    }
+    catch(e) {
+      alert("AUTO ERROR:\\n" + e.toString());
+    }
+  `;
+  sendScript(s,"TEST POSTAĆ - AUTO");
+}
+
+function runBloom(){
+  const s=`
+    try{
+      var doc=app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer=doc.paste();
+      layer.name="BLOOM";
+      doc.selection.deselect();
+      layer.applyGaussianBlur(10);
+      layer.blendMode=BlendMode.SCREEN;
+      layer.opacity=20;
+    }catch(e){alert("BLOOM ERROR:\\n"+e.toString());}
+  `;
+  sendScript(s,"BLOOM");
+}
+
+function runSharpen(){
+  const s=`
+    try{
+      var doc=app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer=doc.paste();
+      layer.name="SHARPEN";
+      doc.selection.deselect();
+      layer.applyHighPass(2);
+      layer.blendMode=BlendMode.OVERLAY;
+      layer.opacity=55;
+    }catch(e){alert("SHARPEN ERROR:\\n"+e.toString());}
+  `;
+  sendScript(s,"SHARPEN");
+}
+
+window.addEventListener("message",e=>{
+  if(e.data==="done"){log('Photopea -> "done"');document.getElementById("status").textContent="Photopea zakończyła ostatnie polecenie.";}
+  else if(typeof e.data==="string") log("Photopea -> "+e.data);
+});
+</script>
+</body>
+</html>
