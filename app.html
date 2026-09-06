@@ -12,28 +12,167 @@
 <body>
 <div class="wrap">
   <div class="head"><div class="logo">K</div><div><h1>KUBIXSIO TOOLS</h1><div class="sub">Szybkie narzędzia do Photopea</div></div></div>
-  <div class="section"><div class="section-title">POSTAĆ</div><div class="grid"><button onclick="runCharacterAuto()">✦ AUTO OBRÓBKA POSTACI<span class="hint">Wczytuje Kubixsio.atn, czeka chwilę i odpala OBRÓBKA POSTACI</span></button></div></div>
-  <div class="section"><div class="section-title">EFEKTY FINALNE</div><div class="grid"><button onclick="runBloom()">✨ BLOOM<span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span></button><button onclick="runSharpen()">◈ SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button></div></div>
+
+  <div class="section">
+    <div class="section-title">POSTAĆ</div>
+    <div class="grid"><button onclick="runCharacterAuto()">✦ AUTO OBRÓBKA POSTACI<span class="hint">Camera Raw • krawędzie • Linear Dodge • maska</span></button></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">EFEKTY FINALNE</div>
+    <div class="grid">
+      <button onclick="runBloom()">✨ BLOOM<span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span></button>
+      <button onclick="runSharpen()">◈ SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button>
+      <button onclick="runVignette()">◉ WINIETA<span class="hint">Standard • 20% • moc zmieniasz kryciem warstwy</span></button>
+      <button onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">Twoje Krzywe • grupa 70% • maska grupy</span></button>
+    </div>
+  </div>
+
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v7</div>
+  <div class="footer">KUBIXSIO TOOLS • v8</div>
 </div>
 <script>
 const ATN_URL='https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn';
 let atnLoaded=false;
 function setStatus(t,m=''){document.getElementById('status').textContent=t;document.getElementById('dot').className='dot'+(m?' '+m:'');}
 function postScript(s){window.parent.postMessage(s,'*');}
+
 function runCharacterAuto(){
   setStatus('Uruchamiam obróbkę postaci...','busy');
-  if(atnLoaded){ postScript('app.doAction("OBRÓBKA POSTACI", "Kubixsio");'); return; }
+  if(atnLoaded){postScript('app.doAction("OBRÓBKA POSTACI", "Kubixsio");');return;}
   postScript('app.open("'+ATN_URL+'");');
-  setTimeout(function(){
-    atnLoaded=true;
-    postScript('app.doAction("OBRÓBKA POSTACI", "Kubixsio");');
-  },1200);
+  setTimeout(function(){atnLoaded=true;postScript('app.doAction("OBRÓBKA POSTACI", "Kubixsio");');},1200);
 }
-function runBloom(){setStatus('Tworzę BLOOM...','busy');postScript(`var doc=app.activeDocument;doc.selection.selectAll();doc.selection.copy(true);var layer=doc.paste();layer.name="BLOOM";doc.selection.deselect();layer.applyGaussianBlur(10);layer.blendMode=BlendMode.SCREEN;layer.opacity=20;`)}
-function runSharpen(){setStatus('Tworzę SHARPEN...','busy');postScript(`var doc=app.activeDocument;doc.selection.selectAll();doc.selection.copy(true);var layer=doc.paste();layer.name="SHARPEN";doc.selection.deselect();layer.applyHighPass(2);layer.blendMode=BlendMode.OVERLAY;layer.opacity=55;`)}
-window.addEventListener('message',function(e){if(e.data==='done')setStatus('Gotowe','');});
+
+function runBloom(){
+  setStatus('Tworzę BLOOM...','busy');
+  postScript(`
+    try{
+      var doc=app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer=doc.paste();
+      layer.name="BLOOM";
+      doc.selection.deselect();
+      layer.applyGaussianBlur(10);
+      layer.blendMode=BlendMode.SCREEN;
+      layer.opacity=20;
+      app.echoToOE("KTX_OK|Bloom gotowy");
+    }catch(e){app.echoToOE("KTX_ERR|BLOOM|"+e.toString());}
+  `);
+}
+
+function runSharpen(){
+  setStatus('Tworzę SHARPEN...','busy');
+  postScript(`
+    try{
+      var doc=app.activeDocument;
+      doc.selection.selectAll();
+      doc.selection.copy(true);
+      var layer=doc.paste();
+      layer.name="SHARPEN";
+      doc.selection.deselect();
+      layer.applyHighPass(2);
+      layer.blendMode=BlendMode.OVERLAY;
+      layer.opacity=55;
+      app.echoToOE("KTX_OK|Sharpen gotowy");
+    }catch(e){app.echoToOE("KTX_ERR|SHARPEN|"+e.toString());}
+  `);
+}
+
+function runVignette(){
+  setStatus('Tworzę WINIETĘ...','busy');
+  postScript(`
+    try{
+      var doc=app.activeDocument;
+      function num(v){try{return v.as("px");}catch(e){} try{return v.value;}catch(e){} return Number(v);}
+      function ellipse(cx,cy,rx,ry,n){var p=[];for(var i=0;i<n;i++){var a=Math.PI*2*i/n;p.push([cx+Math.cos(a)*rx,cy+Math.sin(a)*ry]);}return p;}
+      function revealAllMask(){
+        var d=new ActionDescriptor();
+        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
+        var r=new ActionReference();
+        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
+        d.putReference(charIDToTypeID("At  "),r);
+        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("RvlA"));
+        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
+      }
+      function hideSelectionMask(){
+        var d=new ActionDescriptor();
+        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
+        var r=new ActionReference();
+        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
+        d.putReference(charIDToTypeID("At  "),r);
+        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("HdSl"));
+        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
+      }
+
+      var w=num(doc.width), h=num(doc.height);
+      var group=doc.layerSets.add(); group.name="WINIETA";
+      var layer=doc.artLayers.add(); layer.name="STANDARD"; doc.activeLayer=layer;
+      var black=new SolidColor(); black.rgb.red=0; black.rgb.green=0; black.rgb.blue=0;
+      doc.selection.selectAll(); doc.selection.fill(black); doc.selection.deselect();
+
+      var pts=ellipse(w/2,h/2,w*0.37,h*0.37,72);
+      doc.selection.select(pts,SelectionType.REPLACE,0,true);
+      doc.selection.feather(Math.round(Math.min(w,h)*0.28));
+      hideSelectionMask();
+      doc.selection.deselect();
+      layer.opacity=20;
+      layer.move(group,ElementPlacement.INSIDE);
+
+      doc.activeLayer=group;
+      revealAllMask();
+      app.echoToOE("KTX_OK|Winieta gotowa");
+    }catch(e){app.echoToOE("KTX_ERR|WINIETA|"+e.toString());}
+  `);
+}
+
+function runFinalLook(){
+  setStatus('Tworzę FINAL LOOK...','busy');
+  postScript(`
+    try{
+      var doc=app.activeDocument;
+      function revealAllMask(){
+        var d=new ActionDescriptor();
+        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
+        var r=new ActionReference();
+        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
+        d.putReference(charIDToTypeID("At  "),r);
+        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("RvlA"));
+        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
+      }
+      var group=doc.layerSets.add(); group.name="FINAL LOOK"; group.opacity=70;
+
+      var mk=new ActionDescriptor();
+      var ref=new ActionReference(); ref.putClass(charIDToTypeID("AdjL")); mk.putReference(charIDToTypeID("null"),ref);
+      var using=new ActionDescriptor(); using.putString(charIDToTypeID("Nm  "),"KRZYWE");
+      var type=new ActionDescriptor();
+      var adjs=new ActionList();
+      var curve=new ActionDescriptor();
+      var ch=new ActionReference(); ch.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Cmps")); curve.putReference(charIDToTypeID("Chnl"),ch);
+      var points=new ActionList();
+      function point(x,y){var p=new ActionDescriptor();p.putDouble(charIDToTypeID("Hrzn"),x);p.putDouble(charIDToTypeID("Vrtc"),y);points.putObject(charIDToTypeID("Pnt "),p);}
+      point(0,0); point(64,66); point(181,195); point(255,255);
+      curve.putList(charIDToTypeID("Crv "),points);
+      adjs.putObject(charIDToTypeID("CrvA"),curve);
+      type.putList(charIDToTypeID("Adjs"),adjs);
+      using.putObject(charIDToTypeID("Type"),charIDToTypeID("Crvs"),type);
+      mk.putObject(charIDToTypeID("Usng"),charIDToTypeID("AdjL"),using);
+      executeAction(charIDToTypeID("Mk  "),mk,DialogModes.NO);
+
+      var curves=doc.activeLayer; curves.name="KRZYWE"; curves.move(group,ElementPlacement.INSIDE);
+      doc.activeLayer=group; revealAllMask();
+      app.echoToOE("KTX_OK|Final Look gotowy");
+    }catch(e){app.echoToOE("KTX_ERR|FINALLOOK|"+e.toString());}
+  `);
+}
+
+window.addEventListener('message',function(e){
+  if(e.data==='done'){setStatus('Gotowe','');return;}
+  if(typeof e.data!=='string')return;
+  if(e.data.indexOf('KTX_OK|')===0){setStatus(e.data.substring(7),'');return;}
+  if(e.data.indexOf('KTX_ERR|')===0){setStatus('Błąd — '+e.data.split('|')[1],'err');return;}
+});
 </script>
 </body>
 </html>
