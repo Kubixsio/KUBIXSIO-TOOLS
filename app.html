@@ -23,13 +23,13 @@
     <div class="grid">
       <button onclick="runBloom()">✨ BLOOM<span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span></button>
       <button onclick="runSharpen()">◈ SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button>
-      <button onclick="runVignette()">◉ WINIETA<span class="hint">Standard • 20% • moc zmieniasz kryciem warstwy</span></button>
-      <button onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">Twoje Krzywe • grupa 70% • maska grupy</span></button>
+      <button onclick="runVignette()">◉ WINIETA<span class="hint">STANDARD • 20% • miękka klasyczna winieta</span></button>
+      <button onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">KRZYWE • grupa 70% • odwzorowane z Twojego screena</span></button>
     </div>
   </div>
 
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v8</div>
+  <div class="footer">KUBIXSIO TOOLS • v9</div>
 </div>
 <script>
 const ATN_URL='https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn';
@@ -87,41 +87,21 @@ function runVignette(){
       var doc=app.activeDocument;
       function num(v){try{return v.as("px");}catch(e){} try{return v.value;}catch(e){} return Number(v);}
       function ellipse(cx,cy,rx,ry,n){var p=[];for(var i=0;i<n;i++){var a=Math.PI*2*i/n;p.push([cx+Math.cos(a)*rx,cy+Math.sin(a)*ry]);}return p;}
-      function revealAllMask(){
-        var d=new ActionDescriptor();
-        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
-        var r=new ActionReference();
-        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
-        d.putReference(charIDToTypeID("At  "),r);
-        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("RvlA"));
-        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
-      }
-      function hideSelectionMask(){
-        var d=new ActionDescriptor();
-        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
-        var r=new ActionReference();
-        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
-        d.putReference(charIDToTypeID("At  "),r);
-        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("HdSl"));
-        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
-      }
-
       var w=num(doc.width), h=num(doc.height);
       var group=doc.layerSets.add(); group.name="WINIETA";
-      var layer=doc.artLayers.add(); layer.name="STANDARD"; doc.activeLayer=layer;
+      var layer=doc.artLayers.add(); layer.name="STANDARD";
+      doc.activeLayer=layer;
       var black=new SolidColor(); black.rgb.red=0; black.rgb.green=0; black.rgb.blue=0;
-      doc.selection.selectAll(); doc.selection.fill(black); doc.selection.deselect();
-
-      var pts=ellipse(w/2,h/2,w*0.37,h*0.37,72);
-      doc.selection.select(pts,SelectionType.REPLACE,0,true);
-      doc.selection.feather(Math.round(Math.min(w,h)*0.28));
-      hideSelectionMask();
+      doc.selection.selectAll();
+      doc.selection.fill(black);
       doc.selection.deselect();
+      var pts=ellipse(w/2,h/2,w*0.38,h*0.38,64);
+      doc.selection.select(pts);
+      doc.selection.clear();
+      doc.selection.deselect();
+      layer.applyGaussianBlur(Math.round(Math.min(w,h)*0.16));
       layer.opacity=20;
       layer.move(group,ElementPlacement.INSIDE);
-
-      doc.activeLayer=group;
-      revealAllMask();
       app.echoToOE("KTX_OK|Winieta gotowa");
     }catch(e){app.echoToOE("KTX_ERR|WINIETA|"+e.toString());}
   `);
@@ -132,36 +112,36 @@ function runFinalLook(){
   postScript(`
     try{
       var doc=app.activeDocument;
-      function revealAllMask(){
-        var d=new ActionDescriptor();
-        d.putClass(charIDToTypeID("Nw  "),charIDToTypeID("Chnl"));
-        var r=new ActionReference();
-        r.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Msk "));
-        d.putReference(charIDToTypeID("At  "),r);
-        d.putEnumerated(charIDToTypeID("Usng"),charIDToTypeID("UsrM"),charIDToTypeID("RvlA"));
-        executeAction(charIDToTypeID("Mk  "),d,DialogModes.NO);
-      }
-      var group=doc.layerSets.add(); group.name="FINAL LOOK"; group.opacity=70;
-
+      var group=doc.layerSets.add();
+      group.name="FINAL LOOK";
+      group.opacity=70;
       var mk=new ActionDescriptor();
-      var ref=new ActionReference(); ref.putClass(charIDToTypeID("AdjL")); mk.putReference(charIDToTypeID("null"),ref);
-      var using=new ActionDescriptor(); using.putString(charIDToTypeID("Nm  "),"KRZYWE");
+      var ref=new ActionReference();
+      ref.putClass(charIDToTypeID("AdjL"));
+      mk.putReference(charIDToTypeID("null"),ref);
+      var using=new ActionDescriptor();
+      using.putString(charIDToTypeID("Nm  "),"KRZYWE");
       var type=new ActionDescriptor();
       var adjs=new ActionList();
       var curve=new ActionDescriptor();
-      var ch=new ActionReference(); ch.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Cmps")); curve.putReference(charIDToTypeID("Chnl"),ch);
+      var ch=new ActionReference();
+      ch.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Cmps"));
+      curve.putReference(charIDToTypeID("Chnl"),ch);
       var points=new ActionList();
       function point(x,y){var p=new ActionDescriptor();p.putDouble(charIDToTypeID("Hrzn"),x);p.putDouble(charIDToTypeID("Vrtc"),y);points.putObject(charIDToTypeID("Pnt "),p);}
-      point(0,0); point(64,66); point(181,195); point(255,255);
+      point(0,0);
+      point(67,74);
+      point(181,194);
+      point(255,255);
       curve.putList(charIDToTypeID("Crv "),points);
       adjs.putObject(charIDToTypeID("CrvA"),curve);
       type.putList(charIDToTypeID("Adjs"),adjs);
       using.putObject(charIDToTypeID("Type"),charIDToTypeID("Crvs"),type);
       mk.putObject(charIDToTypeID("Usng"),charIDToTypeID("AdjL"),using);
       executeAction(charIDToTypeID("Mk  "),mk,DialogModes.NO);
-
-      var curves=doc.activeLayer; curves.name="KRZYWE"; curves.move(group,ElementPlacement.INSIDE);
-      doc.activeLayer=group; revealAllMask();
+      var curves=doc.activeLayer;
+      curves.name="KRZYWE";
+      curves.move(group,ElementPlacement.INSIDE);
       app.echoToOE("KTX_OK|Final Look gotowy");
     }catch(e){app.echoToOE("KTX_ERR|FINALLOOK|"+e.toString());}
   `);
