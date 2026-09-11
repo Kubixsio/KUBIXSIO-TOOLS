@@ -1,0 +1,32 @@
+name: Build watermark PNG
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-watermark.yml'
+      - 'watermark-part*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild exact PNG
+        run: |
+          cat watermark-part1.txt watermark-part2.txt watermark-part3.txt watermark-part4.txt watermark-part5.txt | tr -d '\n\r ' | base64 -d > watermark.png
+          file watermark.png
+      - name: Commit PNG
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watermark.png
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Build exact watermark PNG"
+            git push
+          fi
