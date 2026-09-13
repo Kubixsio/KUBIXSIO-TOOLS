@@ -57,18 +57,20 @@
       </div>
     </div>
     <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-    <div class="footer">KUBIXSIO TOOLS • v29</div>
+    <div class="footer">KUBIXSIO TOOLS • v31</div>
   </div>
   <script>
     const ATN_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn';
     const VIGNETTE_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/vignette.svg';
     const WATERMARK_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/watermarkFULLHD.png';
+    const NOISE_ATN_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/Noise.atn';
     let atnLoaded = false;
     let vignetteStage = 'idle';
     let watermarkStage = 'idle';
     let watermarkState = null;
     let watermarkGotState = false;
     let watermarkGotPrepDone = false;
+    let noiseAtnLoaded = false;
 
     function setStatus(t, m) {
       document.getElementById('status').textContent = t;
@@ -116,9 +118,21 @@
       postScript('try{var doc=app.activeDocument;var group=doc.layerSets.add();group.name="FINAL LOOK";group.opacity=70;var mk=new ActionDescriptor();var ref=new ActionReference();ref.putClass(charIDToTypeID("AdjL"));mk.putReference(charIDToTypeID("null"),ref);var using=new ActionDescriptor();using.putString(charIDToTypeID("Nm "),"KRZYWE");var type=new ActionDescriptor();var adjs=new ActionList();var curve=new ActionDescriptor();var ch=new ActionReference();ch.putEnumerated(charIDToTypeID("Chnl"),charIDToTypeID("Chnl"),charIDToTypeID("Cmps"));curve.putReference(charIDToTypeID("Chnl"),ch);var points=new ActionList();function point(x,y){var p=new ActionDescriptor();p.putDouble(charIDToTypeID("Hrzn"),x);p.putDouble(charIDToTypeID("Vrtc"),y);points.putObject(charIDToTypeID("Pnt "),p)}point(0,0);point(66,67);point(181,193);point(255,255);curve.putList(charIDToTypeID("Crv "),points);adjs.putObject(charIDToTypeID("CrvA"),curve);type.putList(charIDToTypeID("Adjs"),adjs);using.putObject(charIDToTypeID("Type"),charIDToTypeID("Crvs"),type);mk.putObject(charIDToTypeID("Usng"),charIDToTypeID("AdjL"),using);executeAction(charIDToTypeID("Mk "),mk,DialogModes.NO);var curves=doc.activeLayer;curves.name="KRZYWE";curves.move(group,ElementPlacement.INSIDE);app.echoToOE("KTX_OK|Final Look gotowy")}catch(e){app.echoToOE("KTX_ERR|FINALLOOK|"+e.toString())}');
     }
 
+    function executeNoise() {
+      postScript('try{var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");doc.selection.selectAll();doc.selection.copy(true);var layer=doc.paste();doc.selection.deselect();layer.name="SZUM";doc.activeLayer=layer;app.doAction("SZUM","KubixsioNoise");layer.opacity=80;doc.activeLayer=layer;app.echoToOE("KTX_OK|Szum gotowy")}catch(e){app.echoToOE("KTX_ERR|SZUM|"+e.toString())}');
+    }
+
     function runNoise() {
       setStatus('Dodaję SZUM...', 'busy');
-      postScript('try{var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");doc.selection.selectAll();doc.selection.copy(true);var layer=doc.paste();layer.name="SZUM";doc.selection.deselect();layer.opacity=80;doc.activeLayer=layer;var d=new ActionDescriptor();d.putEnumerated(stringIDToTypeID("distort"),stringIDToTypeID("distort"),stringIDToTypeID("uniformDistribution"));d.putUnitDouble(stringIDToTypeID("noise"),stringIDToTypeID("percentUnit"),5);d.putBoolean(stringIDToTypeID("monochromatic"),false);executeAction(stringIDToTypeID("addNoise"),d,DialogModes.NO);app.echoToOE("KTX_OK|Szum gotowy")}catch(e){app.echoToOE("KTX_ERR|SZUM|"+e.toString())}');
+      if (noiseAtnLoaded) {
+        executeNoise();
+        return;
+      }
+      postScript('app.open("' + NOISE_ATN_URL + '");');
+      setTimeout(function () {
+        noiseAtnLoaded = true;
+        executeNoise();
+      }, 1200);
     }
 
     function runWatermark() {
@@ -141,7 +155,7 @@
     function finishWatermark() {
       watermarkStage = 'finishing';
       const state = JSON.stringify(watermarkState);
-      postScript('try{var s=' + state + ';if(!s)throw new Error("Brak stanu projektu");var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");if(doc.name!==s.name)throw new Error("Zmieniono dokument docelowy");function isBG(L){if(!L)return true;try{if(L.isBackgroundLayer)return true}catch(e){}return false}function hasId(id){if(id==null)return false;for(var i=0;i<s.ids.length;i++){if(s.ids[i]===id)return true}return false}var useIds=false;for(var u=0;u<s.ids.length;u++){if(s.ids[u]!=null){useIds=true;break}}if(doc.layers.length!==s.count+1)throw new Error("PNG nie dodał dokładnie jednej warstwy");var layer=null;for(var i=0;i<doc.layers.length;i++){var L=doc.layers[i];if(isBG(L))continue;var id=null;try{id=L.id}catch(e){}if(useIds){if(id!=null&&!hasId(id)){layer=L;break}} }if(!layer){function nCount(arr,n){var c=0;for(var k=0;k<arr.length;k++)if(arr[k]===n)c++;return c}var now=[];for(var t=0;t<doc.layers.length;t++)now.push(doc.layers[t].name);for(var j=0;j<doc.layers.length;j++){var cand=doc.layers[j];if(isBG(cand))continue;if(nCount(now,cand.name)>nCount(s.names,cand.name)){layer=cand;break}}}if(!layer)throw new Error("Nie znaleziono nowej warstwy WATERMARK");if(isBG(layer))throw new Error("Odrzucono warstwę Background");var remove=[];function collect(layers){for(var i=layers.length-1;i>=0;i--){var L=layers[i];if(L!==layer&&L.name==="WATERMARK"&&!isBG(L))remove.push(L);try{if(L.layers)collect(L.layers)}catch(e){}}}collect(doc.layers);for(var r=0;r<remove.length;r++)remove[r].remove();try{layer.rasterize(RasterizeType.ENTIRELAYER)}catch(e){try{layer.rasterize()}catch(e2){}}layer.name="WATERMARK";function px(v){try{return v.as("px")}catch(e){}try{return v.value}catch(e){}return Number(v)}try{var b=layer.bounds;var lw=px(b[2])-px(b[0]);var lh=px(b[3])-px(b[1]);var dw=px(doc.width),dh=px(doc.height);if(lw>0&&lh>0)layer.resize((dw/lw)*100,(dh/lh)*100,AnchorPosition.MIDDLECENTER)}catch(e){}if(isBG(layer)||layer.name!=="WATERMARK")throw new Error("WATERMARK nie został poprawnie ustawiony");layer.opacity=80;var top=doc.layers[0];var finalLayer=layer;if(top&&top!==layer){try{var dup=layer.duplicate(top,ElementPlacement.PLACEBEFORE);if(dup){layer.remove();finalLayer=dup}}catch(e){layer.move(top,ElementPlacement.PLACEBEFORE);finalLayer=layer}}finalLayer.name="WATERMARK";finalLayer.opacity=80;doc.activeLayer=finalLayer;app.echoToOE("KTX_OK|Watermark gotowy")}catch(e){app.echoToOE("KTX_ERR|WATERMARK|"+e.toString())}');
+      postScript('try{var s=' + state + ';if(!s)throw new Error("Brak stanu projektu");var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");if(doc.name!==s.name)throw new Error("Zmieniono dokument docelowy");function isBG(L){if(!L)return true;try{if(L.isBackgroundLayer)return true}catch(e){}return false}function hasId(id){if(id==null)return false;for(var i=0;i<s.ids.length;i++){if(s.ids[i]===id)return true}return false}var useIds=false;for(var u=0;u<s.ids.length;u++){if(s.ids[u]!=null){useIds=true;break}}if(doc.layers.length!==s.count+1)throw new Error("PNG nie dodał dokładnie jednej warstwy");var layer=null;for(var i=0;i<doc.layers.length;i++){var L=doc.layers[i];if(isBG(L))continue;var id=null;try{id=L.id}catch(e){}if(useIds){if(id!=null&&!hasId(id)){layer=L;break}} }if(!layer){function nCount(arr,n){var c=0;for(var k=0;k<arr.length;k++)if(arr[k]===n)c++;return c}var now=[];for(var t=0;t<doc.layers.length;t++)now.push(doc.layers[t].name);for(var j=0;j<doc.layers.length;j++){var cand=doc.layers[j];if(isBG(cand))continue;if(nCount(now,cand.name)>nCount(s.names,cand.name)){layer=cand;break}}}if(!layer)throw new Error("Nie znaleziono nowej warstwy WATERMARK");if(isBG(layer))throw new Error("Odrzucono warstwę Background");var remove=[];function collect(layers){for(var i=layers.length-1;i>=0;i--){var L=layers[i];if(L!==layer&&L.name==="WATERMARK"&&!isBG(L))remove.push(L);try{if(L.layers)collect(L.layers)}catch(e){}}}collect(doc.layers);for(var r=0;r<remove.length;r++)remove[r].remove();try{layer.rasterize(RasterizeType.ENTIRELAYER)}catch(e){try{layer.rasterize()}catch(e2){}}layer.name="WATERMARK";function px(v){try{return v.as("px")}catch(e){}try{return v.value}catch(e){}return Number(v)}try{var b=layer.bounds;var lw=px(b[2])-px(b[0]);var lh=px(b[3])-px(b[1]);var dw=px(doc.width),dh=px(doc.height);if(lw>0&&lh>0)layer.resize((dw/lw)*100,(dh/lh)*100,AnchorPosition.MIDDLECENTER)}catch(e){}if(isBG(layer)||layer.name!=="WATERMARK")throw new Error("WATERMARK nie został poprawnie ustawiony");layer.opacity=80;var top=doc.layers[0];if(top&&top!==layer)layer.move(top,ElementPlacement.PLACEBEFORE);if(doc.layers[0]!==layer)throw new Error("Nie udało się przenieść WATERMARK na samą górę");layer.name="WATERMARK";layer.opacity=80;doc.activeLayer=layer;app.echoToOE("KTX_OK|Watermark gotowy")}catch(e){app.echoToOE("KTX_ERR|WATERMARK|"+e.toString())}');
     }
 
     window.addEventListener('message', function (e) {
