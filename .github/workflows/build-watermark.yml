@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - '.github/workflows/build-watermark.yml'
-      - 'watermark-part*.txt'
   workflow_dispatch:
 
 permissions:
@@ -15,10 +14,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Rebuild exact PNG
+      - name: Install Pillow
+        run: python -m pip install --quiet pillow
+      - name: Convert embedded watermark to RGBA PNG
         run: |
-          cat watermark-part1.txt watermark-part2.txt watermark-part3.txt watermark-part4.txt watermark-part5.txt | tr -d '\n\r ' | base64 -d > watermark.png
-          file watermark.png
+          python - <<'PY'
+          import re, base64
+          from io import BytesIO
+          from PIL import Image
+          from pathlib import Path
+
+          svg = Path('watermark.svg').read_text(encoding='utf-8')
+          m = re.search(r'data:image/png;base64,([^"\']+)', svg)
+          if not m:
+              raise SystemExit('No embedded PNG found in watermark.svg')
+
+          src = Image.open(BytesIO(base64.b64decode(m.group(1)))).convert('RGBA')
+          canvas = Image.new('RGBA', (1920,1080), (0,0,0,0))
+          canvas.alpha_composite(src, (1393,677))
+          canvas.save('watermark.png')
+          print(src.mode, src.size)
+          print('saved watermark.png', canvas.size)
+          PY
       - name: Commit PNG
         run: |
           git config user.name "github-actions[bot]"
@@ -27,6 +44,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes"
           else
-            git commit -m "Build exact watermark PNG"
+            git commit -m "Build RGBA watermark PNG"
             git push
           fi
