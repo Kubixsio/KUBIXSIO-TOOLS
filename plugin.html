@@ -17,11 +17,13 @@
     .section-title{font-size:11px;font-weight:800;letter-spacing:1.1px;color:#aeb7c2;margin:0 0 10px}
     .grid{display:grid;grid-template-columns:1fr;gap:9px}
     button{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:12px 13px;font-size:14px;font-weight:800;cursor:pointer;text-align:left}
-    .noise-controls{display:grid;gap:7px;margin-top:8px}
+    .noise-controls{display:grid;gap:7px;max-height:0;opacity:0;overflow:hidden;margin-top:0;pointer-events:none;transition:max-height .22s ease,opacity .18s ease,margin-top .22s ease}
+    .noise-controls.open{max-height:180px;opacity:1;margin-top:8px;pointer-events:auto}
     .noise-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
     .noise-adjust{display:flex;align-items:center;gap:6px}
     .noise-adjust .mini{width:32px;min-width:32px;padding:6px 0;text-align:center;font-size:15px;font-weight:900}
     .noise-value{min-width:48px;text-align:center;font-weight:800;color:var(--text)}
+    .noise-done{margin-top:2px;text-align:center;background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent}
     .hint{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:5px}
     .status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;padding:4px 3px 0}
     .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
@@ -53,8 +55,8 @@
         <button type="button" onclick="runVignette()">◉ WINIETA<span class="hint">Nakładka SVG • 20% • moc regulujesz kryciem</span></button>
         <button type="button" onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">Krzywe: 66→67 i 181→193 • grupa 70%</span></button>
         <div>
-          <button type="button" onclick="runNoise()">▧ SZUM<span id="noiseHint" class="hint">Add Noise 5% • krycie 80%</span></button>
-          <div class="noise-controls">
+          <button type="button" onclick="toggleNoisePanel()" id="noiseButton" aria-expanded="false">▧ SZUM<span id="noiseHint" class="hint">Kliknij, aby ustawić • 5% / 80%</span></button>
+          <div id="noiseControls" class="noise-controls">
             <div class="noise-row">
               <span>Ilość szumu</span>
               <div class="noise-adjust">
@@ -71,6 +73,7 @@
                 <button type="button" class="mini" onclick="changeNoiseOpacity(5)">+</button>
               </div>
             </div>
+            <button type="button" class="noise-done" onclick="runNoise()">GOTOWE</button>
           </div>
         </div>
       </div>
@@ -82,7 +85,7 @@
       </div>
     </div>
     <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-    <div class="footer">KUBIXSIO TOOLS • v33</div>
+    <div class="footer">KUBIXSIO TOOLS • v34</div>
   </div>
   <script>
     const ATN_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn';
@@ -105,7 +108,7 @@
       const hint = document.getElementById('noiseHint');
       const amountEl = document.getElementById('noiseAmountValue');
       const opacityEl = document.getElementById('noiseOpacityValue');
-      if (hint) hint.textContent = 'Add Noise ' + noiseAmount + '% • krycie ' + noiseOpacity + '%';
+      if (hint) hint.textContent = 'Kliknij, aby ustawić • ' + noiseAmount + '% / ' + noiseOpacity + '%';
       if (amountEl) amountEl.textContent = noiseAmount + '%';
       if (opacityEl) opacityEl.textContent = noiseOpacity + '%';
     }
@@ -118,6 +121,14 @@
     function changeNoiseOpacity(delta) {
       noiseOpacity = clamp(noiseOpacity + delta, 0, 100);
       updateNoiseUI();
+    }
+
+    function toggleNoisePanel() {
+      const controls = document.getElementById('noiseControls');
+      const button = document.getElementById('noiseButton');
+      if (!controls) return;
+      const open = controls.classList.toggle('open');
+      if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     function setStatus(t, m) {
@@ -167,6 +178,10 @@
     }
 
     function runNoise() {
+      const controls = document.getElementById('noiseControls');
+      const button = document.getElementById('noiseButton');
+      if (controls) controls.classList.remove('open');
+      if (button) button.setAttribute('aria-expanded', 'false');
       setStatus('Dodaję SZUM...', 'busy');
       postScript(
         'try{' +
