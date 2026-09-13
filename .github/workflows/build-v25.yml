@@ -1,0 +1,38 @@
+name: Build v25
+
+on:
+  push:
+    paths:
+      - 'v25.html.gz.b64'
+      - '.github/workflows/build-v25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build v25 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d v25.html.gz.b64 | gzip -d > v25.html
+          cat watermark-part1.txt watermark-part2.txt watermark-part3.txt watermark-part4.txt watermark-part5.txt | tr -d '\r\n ' | base64 -d > watermark-v25.png
+          echo 'bb60f5a14334966b2effca5e9d792809ba85b40b7f8a2b3952ad66e3be27f2ac  watermark-v25.png' | sha256sum -c -
+          printf 'v25.html\n' > version.txt
+
+      - name: Commit v25
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v25.html watermark-v25.png version.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Build v25 ArrayBuffer watermark importer'
+            git push
+          fi
