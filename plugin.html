@@ -4,23 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=44">
+<link rel="stylesheet" href="plugin-v35.css?v=45">
 </head>
 <body>
 <div class="wrap">
   <div class="head"><div class="logo">K</div><div><h1>KUBIXSIO TOOLS</h1><div class="sub">Szybkie narzędzia do Photopea</div></div></div>
-  <div class="section"><p class="section-title">POSTAĆ</p><div class="grid"><button type="button" onclick="runCharacterAuto()">✦ AUTO OBRÓBKA POSTACI<span class="hint">Camera Raw • krawędzie • Linear Dodge • maska</span></button></div></div>
+  <div class="section"><p class="section-title">POSTAĆ</p><div class="grid"><button type="button" onclick="runCharacterAuto()">AUTO OBRÓBKA POSTACI<span class="hint">Camera Raw • krawędzie • Linear Dodge • maska</span></button></div></div>
   <div class="section"><p class="section-title">ŚWIATŁO</p><div class="grid">
-    <button type="button" onclick="setLightSource()">☀ USTAW ŹRÓDŁO ŚWIATŁA<span class="hint">Tworzy żółty znacznik + • przesuń go w miejsce światła</span></button>
-    <button type="button" onclick="runRimLight()">✦ DODAJ LINIĘ ŚWIATŁA<span class="hint">RIM LIGHT • biały • 2 px • zależny od źródła</span></button>
+    <button type="button" onclick="setLightSource()">USTAW ŹRÓDŁO ŚWIATŁA<span class="hint">Tworzy żółty znacznik + • przesuń go w miejsce światła</span></button>
+    <button type="button" onclick="runRimLight()">DODAJ LINIĘ ŚWIATŁA<span class="hint">RIM LIGHT • biały • 2 px • zależny od źródła</span></button>
   </div></div>
   <div class="section"><p class="section-title">EFEKTY FINALNE</p><div class="grid">
-    <button type="button" onclick="runBloom()">✨ BLOOM<span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span></button>
-    <button type="button" onclick="runSharpen()">◈ SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button>
-    <button type="button" onclick="runVignette()">◉ WINIETA<span class="hint">Nakładka SVG • 20% • moc regulujesz kryciem</span></button>
-    <button type="button" onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">Krzywe: 66→67 i 181→193 • grupa 70%</span></button>
+    <button type="button" onclick="runBloom()">BLOOM<span class="hint">Scalona kopia • Gaussian Blur 10 px • Screen 20%</span></button>
+    <button type="button" onclick="runSharpen()">SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button>
+    <button type="button" onclick="runVignette()">WINIETA<span class="hint">Nakładka SVG • 20% • moc regulujesz kryciem</span></button>
+    <button type="button" onclick="runFinalLook()">FINAL LOOK<span class="hint">Krzywe: 66→67 i 181→193 • grupa 70%</span></button>
     <div>
-      <button type="button" onclick="toggleNoisePanel()" id="noiseButton" aria-expanded="false">▧ SZUM<span id="noiseHint" class="hint">Kliknij, aby ustawić • 5% / 80% • mono ON</span></button>
+      <button type="button" onclick="toggleNoisePanel()" id="noiseButton" aria-expanded="false">SZUM<span id="noiseHint" class="hint">Kliknij, aby ustawić • 5% / 80% • mono ON</span></button>
       <div id="noiseControls" class="noise-controls">
         <div class="noise-row"><span>Ilość szumu</span><div class="noise-adjust"><button type="button" class="mini" onclick="changeNoiseAmount(-1)">−</button><span id="noiseAmountValue" class="noise-value">5%</span><button type="button" class="mini" onclick="changeNoiseAmount(1)">+</button></div></div>
         <div class="noise-row"><span>Krycie</span><div class="noise-adjust"><button type="button" class="mini" onclick="changeNoiseOpacity(-5)">−</button><span id="noiseOpacityValue" class="noise-value">80%</span><button type="button" class="mini" onclick="changeNoiseOpacity(5)">+</button></div></div>
@@ -29,12 +29,12 @@
       </div>
     </div>
   </div></div>
-  <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
+  <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v44</div>
+  <div class="footer">KUBIXSIO TOOLS • v45</div>
 </div>
-<script src="plugin-v35-core.js?v=44"></script>
-<script src="plugin-v37-light.js?v=44"></script>
-<script src="plugin-v35-extra.js?v=44"></script>
+<script src="plugin-v35-core.js?v=45"></script>
+<script src="plugin-v37-light.js?v=45"></script>
+<script src="plugin-v35-extra.js?v=45"></script>
 </body>
 </html>
