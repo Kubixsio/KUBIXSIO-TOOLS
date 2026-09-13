@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <clipPath id="wmclip">
-      <ellipse cx="1920" cy="1080" rx="529" ry="404"/>
-    </clipPath>
-  </defs>
-  <image href="watermark.png?v=22" x="0" y="0" width="1920" height="1080" clip-path="url(#wmclip)"/>
-</svg>
