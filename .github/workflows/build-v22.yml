@@ -1,0 +1,52 @@
+name: Build v22 watermark fix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-v22.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create clipped watermark SVG and v22
+        run: |
+          cat > watermark-v22.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+            <defs>
+              <clipPath id="wmclip">
+                <ellipse cx="1920" cy="1080" rx="529" ry="404"/>
+              </clipPath>
+            </defs>
+            <image href="watermark.png?v=22" x="0" y="0" width="1920" height="1080" clip-path="url(#wmclip)"/>
+          </svg>
+          EOF
+          python - <<'PY'
+          from pathlib import Path
+          src = Path('v21.html').read_text(encoding='utf-8')
+          src = src.replace('KUBIXSIO TOOLS • v21', 'KUBIXSIO TOOLS • v22')
+          src = src.replace("const WATERMARK_URL='https://kubixsio.github.io/KUBIXSIO-TOOLS/watermark.png?v=21';", "const WATERMARK_URL='https://kubixsio.github.io/KUBIXSIO-TOOLS/watermark-v22.svg?v=22';")
+          old = '''function finishWatermark(){watermarkStage='finishing';postScript(`try{var doc=app.activeDocument;var layer=doc.activeLayer;layer.name="WATERMARK";layer.opacity=80;try{layer.move(doc,ElementPlacement.PLACEATBEGINNING)}catch(e){try{var top=doc.layers[0];if(top&&top!==layer)layer.move(top,ElementPlacement.PLACEBEFORE)}catch(e2){}}app.echoToOE("KTX_OK|Watermark gotowy")}catch(e){app.echoToOE("KTX_ERR|WATERMARK|"+e.toString())}`)}'''
+          new = '''function finishWatermark(){watermarkStage='finishing';postScript(`try{var doc=app.activeDocument;var layer=doc.activeLayer;var topLayer=layer;try{var dup=layer.duplicate(doc,ElementPlacement.PLACEATBEGINNING);try{layer.remove()}catch(rm){}topLayer=dup}catch(e){try{var top=doc.layers[0];if(top&&top!==layer)layer.move(top,ElementPlacement.PLACEBEFORE)}catch(e2){}}topLayer.name="WATERMARK";topLayer.opacity=80;app.echoToOE("KTX_OK|Watermark gotowy")}catch(e){app.echoToOE("KTX_ERR|WATERMARK|"+e.toString())}`)}'''
+          if old not in src:
+              raise SystemExit('Nie znaleziono finishWatermark w v21')
+          src = src.replace(old, new)
+          Path('v22.html').write_text(src, encoding='utf-8')
+          Path('version.txt').write_text('v22.html', encoding='utf-8')
+          PY
+      - name: Commit v22
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watermark-v22.svg v22.html version.txt
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Create v22 watermark fix"
+            git push
+          fi
