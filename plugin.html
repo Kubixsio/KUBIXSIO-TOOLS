@@ -17,6 +17,11 @@
     .section-title{font-size:11px;font-weight:800;letter-spacing:1.1px;color:#aeb7c2;margin:0 0 10px}
     .grid{display:grid;grid-template-columns:1fr;gap:9px}
     button{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:12px 13px;font-size:14px;font-weight:800;cursor:pointer;text-align:left}
+    .noise-controls{display:grid;gap:7px;margin-top:8px}
+    .noise-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+    .noise-adjust{display:flex;align-items:center;gap:6px}
+    .noise-adjust .mini{width:32px;min-width:32px;padding:6px 0;text-align:center;font-size:15px;font-weight:900}
+    .noise-value{min-width:48px;text-align:center;font-weight:800;color:var(--text)}
     .hint{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:5px}
     .status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;padding:4px 3px 0}
     .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
@@ -47,7 +52,27 @@
         <button type="button" onclick="runSharpen()">◈ SHARPEN<span class="hint">Scalona kopia • High Pass 2 px • Overlay 55%</span></button>
         <button type="button" onclick="runVignette()">◉ WINIETA<span class="hint">Nakładka SVG • 20% • moc regulujesz kryciem</span></button>
         <button type="button" onclick="runFinalLook()">◐ FINAL LOOK<span class="hint">Krzywe: 66→67 i 181→193 • grupa 70%</span></button>
-        <button type="button" onclick="runNoise()">▧ SZUM<span class="hint">Add Noise 5% • krycie 80%</span></button>
+        <div>
+          <button type="button" onclick="runNoise()">▧ SZUM<span id="noiseHint" class="hint">Add Noise 5% • krycie 80%</span></button>
+          <div class="noise-controls">
+            <div class="noise-row">
+              <span>Ilość szumu</span>
+              <div class="noise-adjust">
+                <button type="button" class="mini" onclick="changeNoiseAmount(-1)">−</button>
+                <span id="noiseAmountValue" class="noise-value">5%</span>
+                <button type="button" class="mini" onclick="changeNoiseAmount(1)">+</button>
+              </div>
+            </div>
+            <div class="noise-row">
+              <span>Krycie</span>
+              <div class="noise-adjust">
+                <button type="button" class="mini" onclick="changeNoiseOpacity(-5)">−</button>
+                <span id="noiseOpacityValue" class="noise-value">80%</span>
+                <button type="button" class="mini" onclick="changeNoiseOpacity(5)">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="section">
@@ -57,7 +82,7 @@
       </div>
     </div>
     <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-    <div class="footer">KUBIXSIO TOOLS • v32</div>
+    <div class="footer">KUBIXSIO TOOLS • v33</div>
   </div>
   <script>
     const ATN_URL = 'https://kubixsio.github.io/KUBIXSIO-TOOLS/Kubixsio.atn';
@@ -69,6 +94,31 @@
     let watermarkState = null;
     let watermarkGotState = false;
     let watermarkGotPrepDone = false;
+    let noiseAmount = 5;
+    let noiseOpacity = 80;
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function updateNoiseUI() {
+      const hint = document.getElementById('noiseHint');
+      const amountEl = document.getElementById('noiseAmountValue');
+      const opacityEl = document.getElementById('noiseOpacityValue');
+      if (hint) hint.textContent = 'Add Noise ' + noiseAmount + '% • krycie ' + noiseOpacity + '%';
+      if (amountEl) amountEl.textContent = noiseAmount + '%';
+      if (opacityEl) opacityEl.textContent = noiseOpacity + '%';
+    }
+
+    function changeNoiseAmount(delta) {
+      noiseAmount = clamp(noiseAmount + delta, 0, 20);
+      updateNoiseUI();
+    }
+
+    function changeNoiseOpacity(delta) {
+      noiseOpacity = clamp(noiseOpacity + delta, 0, 100);
+      updateNoiseUI();
+    }
 
     function setStatus(t, m) {
       document.getElementById('status').textContent = t;
@@ -118,7 +168,36 @@
 
     function runNoise() {
       setStatus('Dodaję SZUM...', 'busy');
-      postScript('try{var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");doc.selection.selectAll();doc.selection.copy(true);var layer=doc.paste();doc.selection.deselect();layer.name="SZUM";doc.activeLayer=layer;layer.opacity=80;var d=new ActionDescriptor();d.putEnumerated(charIDToTypeID("Dstr"),charIDToTypeID("Dstr"),charIDToTypeID("Unfr"));d.putUnitDouble(charIDToTypeID("Nose"),charIDToTypeID("#Prc"),5);d.putBoolean(charIDToTypeID("Mnch"),false);d.putInteger(charIDToTypeID("FlRs"),Math.floor(Math.random()*2147483647));executeAction(charIDToTypeID("AdNs"),d,DialogModes.NO);layer.opacity=80;doc.activeLayer=layer;app.echoToOE("KTX_OK|Szum gotowy")}catch(e){app.echoToOE("KTX_ERR|SZUM|"+e.toString())}');
+      postScript(
+        'try{' +
+          'var doc=app.activeDocument;' +
+          'if(!doc)throw new Error("Brak otwartego dokumentu");' +
+          'function removeNoise(layers){' +
+            'for(var i=layers.length-1;i>=0;i--){' +
+              'var L=layers[i];' +
+              'try{if(L.layers)removeNoise(L.layers)}catch(e){}' +
+              'if(L&&L.name==="SZUM"){try{L.remove()}catch(e){}}' +
+            '}' +
+          '}' +
+          'removeNoise(doc.layers);' +
+          'doc.selection.selectAll();' +
+          'doc.selection.copy(true);' +
+          'var layer=doc.paste();' +
+          'doc.selection.deselect();' +
+          'layer.name="SZUM";' +
+          'doc.activeLayer=layer;' +
+          'layer.opacity=' + noiseOpacity + ';' +
+          'var d=new ActionDescriptor();' +
+          'd.putEnumerated(charIDToTypeID("Dstr"),charIDToTypeID("Dstr"),charIDToTypeID("Unfr"));' +
+          'd.putUnitDouble(charIDToTypeID("Nose"),charIDToTypeID("#Prc"),' + noiseAmount + ');' +
+          'd.putBoolean(charIDToTypeID("Mnch"),false);' +
+          'd.putInteger(charIDToTypeID("FlRs"),Math.floor(Math.random()*2147483647));' +
+          'executeAction(charIDToTypeID("AdNs"),d,DialogModes.NO);' +
+          'layer.opacity=' + noiseOpacity + ';' +
+          'doc.activeLayer=layer;' +
+          'app.echoToOE("KTX_OK|Szum gotowy (' + noiseAmount + '% / ' + noiseOpacity + '%)")' +
+        '}catch(e){app.echoToOE("KTX_ERR|SZUM|"+e.toString())}'
+      );
     }
 
     function runWatermark() {
@@ -143,6 +222,8 @@
       const state = JSON.stringify(watermarkState);
       postScript('try{var s=' + state + ';if(!s)throw new Error("Brak stanu projektu");var doc=app.activeDocument;if(!doc)throw new Error("Brak otwartego dokumentu");if(doc.name!==s.name)throw new Error("Zmieniono dokument docelowy");function isBG(L){if(!L)return true;try{if(L.isBackgroundLayer)return true}catch(e){}return false}function hasId(id){if(id==null)return false;for(var i=0;i<s.ids.length;i++){if(s.ids[i]===id)return true}return false}var useIds=false;for(var u=0;u<s.ids.length;u++){if(s.ids[u]!=null){useIds=true;break}}if(doc.layers.length!==s.count+1)throw new Error("PNG nie dodał dokładnie jednej warstwy");var layer=null;for(var i=0;i<doc.layers.length;i++){var L=doc.layers[i];if(isBG(L))continue;var id=null;try{id=L.id}catch(e){}if(useIds){if(id!=null&&!hasId(id)){layer=L;break}} }if(!layer){function nCount(arr,n){var c=0;for(var k=0;k<arr.length;k++)if(arr[k]===n)c++;return c}var now=[];for(var t=0;t<doc.layers.length;t++)now.push(doc.layers[t].name);for(var j=0;j<doc.layers.length;j++){var cand=doc.layers[j];if(isBG(cand))continue;if(nCount(now,cand.name)>nCount(s.names,cand.name)){layer=cand;break}}}if(!layer)throw new Error("Nie znaleziono nowej warstwy WATERMARK");if(isBG(layer))throw new Error("Odrzucono warstwę Background");var remove=[];function collect(layers){for(var i=layers.length-1;i>=0;i--){var L=layers[i];if(L!==layer&&L.name==="WATERMARK"&&!isBG(L))remove.push(L);try{if(L.layers)collect(L.layers)}catch(e){}}}collect(doc.layers);for(var r=0;r<remove.length;r++)remove[r].remove();try{layer.rasterize(RasterizeType.ENTIRELAYER)}catch(e){try{layer.rasterize()}catch(e2){}}layer.name="WATERMARK";function px(v){try{return v.as("px")}catch(e){}try{return v.value}catch(e){}return Number(v)}try{var b=layer.bounds;var lw=px(b[2])-px(b[0]);var lh=px(b[3])-px(b[1]);var dw=px(doc.width),dh=px(doc.height);if(lw>0&&lh>0)layer.resize((dw/lw)*100,(dh/lh)*100,AnchorPosition.MIDDLECENTER)}catch(e){}if(isBG(layer)||layer.name!=="WATERMARK")throw new Error("WATERMARK nie został poprawnie ustawiony");layer.opacity=80;var top=doc.layers[0];if(top&&top!==layer)layer.move(top,ElementPlacement.PLACEBEFORE);if(doc.layers[0]!==layer)throw new Error("Nie udało się przenieść WATERMARK na samą górę");layer.name="WATERMARK";layer.opacity=80;doc.activeLayer=layer;app.echoToOE("KTX_OK|Watermark gotowy")}catch(e){app.echoToOE("KTX_ERR|WATERMARK|"+e.toString())}');
     }
+
+    updateNoiseUI();
 
     window.addEventListener('message', function (e) {
       if (e.data === 'done') {
