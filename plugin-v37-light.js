@@ -11,49 +11,50 @@ function runRimLight(){
   postScript('('+ktxCreateRimLight.toString()+')('+KTX_RIM_THICKNESS+');');
 }
 
-// Serialized into Photopea. Keep ES5, no throw (Photopea can abort the whole script).
+// Serialized into Photopea. Keep ES5 syntax.
 function ktxCreateRimLight(thickness){
   var doc=null,source=null,rim=null,oldUnits=null,marker=null,markerVisible=null;
   var stage='alpha selection failed';
+
   function px(v){
     var n=null;
-    try{n=v.value}catch(e){}
-    if(n==null||n!==n){try{n=v.as('px')}catch(e2){}}
+    try{n=v.as('px')}catch(e){}
+    if(n==null||n!==n){try{n=v.value}catch(e2){}}
     if(n==null||n!==n)n=Number(v);
-    if(typeof n!=='number'||!isFinite(n))return NaN;
-    return n;
+    return (typeof n==='number'&&isFinite(n))?n:NaN;
   }
+
   function box(item,keepSelection){
-    if(!keepSelection)doc.selection.deselect();
+    if(!keepSelection)try{doc.selection.deselect()}catch(e){}
     var b=item.bounds;
     var a=[px(b[0]),px(b[1]),px(b[2]),px(b[3])];
     for(var i=0;i<4;i++)if(!isFinite(a[i]))return null;
     if(a[2]<=a[0]||a[3]<=a[1])return null;
     return a;
   }
-  function area(a){return a?(a[2]-a[0])*(a[3]-a[1]):0}
+
   function sameLayer(a,b){
     if(a===b)return true;
     return a&&b&&a.id!=null&&b.id!=null&&a.id===b.id;
   }
+
   function findNamed(layers,name){
     for(var i=0;i<layers.length;i++){
-      var layer=layers[i];
-      if(layer&&layer.name===name)return layer;
-      if(layer&&layer.typename==='LayerSet'){
-        var found=findNamed(layer.layers,name);
-        if(found)return found;
-      }
+      var L=layers[i];
+      if(L&&L.name===name)return L;
+      try{if(L&&L.layers){var f=findNamed(L.layers,name);if(f)return f}}catch(e){}
     }
     return null;
   }
+
   function white(){
     var c=new SolidColor();
     c.rgb.red=255;c.rgb.green=255;c.rgb.blue=255;
     return c;
   }
+
   function loadAlpha(layer){
-    doc.selection.deselect();
+    try{doc.selection.deselect()}catch(e){}
     doc.activeLayer=layer;
     var ch=charIDToTypeID('Chnl');
     var sel=new ActionReference(),tr=new ActionReference(),d=new ActionDescriptor();
@@ -64,24 +65,17 @@ function ktxCreateRimLight(thickness){
     executeAction(charIDToTypeID('setd'),d,DialogModes.NO);
     return box(doc.selection,true);
   }
-  function expandSel(pxCount){
-    try{doc.selection.expand(pxCount);return true}catch(e){}
+
+  function contractSel(n){
+    try{doc.selection.contract(n);return true}catch(e){}
     try{
       var d=new ActionDescriptor();
-      d.putUnitDouble(charIDToTypeID('By  '),charIDToTypeID('#Pxl'),pxCount);
-      executeAction(charIDToTypeID('Expn'),d,DialogModes.NO);
-      return true;
-    }catch(e2){return false}
-  }
-  function contractSel(pxCount){
-    try{doc.selection.contract(pxCount);return true}catch(e){}
-    try{
-      var d=new ActionDescriptor();
-      d.putUnitDouble(charIDToTypeID('By  '),charIDToTypeID('#Pxl'),pxCount);
+      d.putUnitDouble(charIDToTypeID('By  '),charIDToTypeID('#Pxl'),n);
       executeAction(charIDToTypeID('Cntc'),d,DialogModes.NO);
       return true;
     }catch(e2){return false}
   }
+
   function makeRim(){
     if(rim){try{rim.remove()}catch(e){}rim=null}
     rim=doc.artLayers.add();
@@ -89,101 +83,71 @@ function ktxCreateRimLight(thickness){
     rim.opacity=100;
     rim.blendMode=BlendMode.NORMAL;
     try{rim.grouped=false}catch(e){}
+    try{rim.move(source,ElementPlacement.PLACEBEFORE)}catch(e){}
     doc.activeLayer=rim;
   }
-  function subtractSource(sb){
+
+  // Build a SOLID inner border: fill the render alpha white, then remove
+  // the alpha contracted by N px. Unlike an outside stroke, the remaining
+  // pixels sit on top of the render and are not just an antialiased fringe.
+  function createSolidInnerOutline(){
     if(!loadAlpha(source))return false;
+    makeRim();
     doc.activeLayer=rim;
-    try{doc.selection.clear()}catch(e){return false}
-    doc.selection.deselect();
-    return ringLooksValid(sb,true);
-  }
-  function ringLooksValid(sb,requireOutward){
-    var rb=box(rim);
-    if(!rb)return false;
-    var dw=px(doc.width),dh=px(doc.height);
-    if(area(rb)>dw*dh*0.85&&area(sb)<dw*dh*0.7)return false;
-    var pad=thickness+6;
-    if(rb[0]<sb[0]-pad||rb[1]<sb[1]-pad||rb[2]>sb[2]+pad||rb[3]>sb[3]+pad){
-      if(area(rb)>area(sb)*3)return false;
+    try{doc.selection.fill(white(),ColorBlendMode.NORMAL,100,false)}catch(e){
+      try{doc.selection.fill(white())}catch(e2){return false}
     }
-    if(requireOutward){
-      var grew=(sb[0]-rb[0])+(sb[1]-rb[1])+(rb[2]-sb[2])+(rb[3]-sb[3]);
-      if(grew<0.5)return false;
-    }
-    if(!loadAlpha(rim))return false;
-    var before=box(doc.selection,true);
-    if(!before){doc.selection.deselect();return false}
-    if(contractSel(Math.max(1,thickness))){
-      var inner=box(doc.selection,true);
-      doc.selection.deselect();
-      if(inner&&area(inner)>area(before)*0.45)return false;
-    }else{
-      doc.selection.deselect();
-    }
+    if(!loadAlpha(source))return false;
+    if(!contractSel(thickness))return false;
+    doc.activeLayer=rim;
+    try{doc.selection.clear()}catch(e3){return false}
+    try{doc.selection.deselect()}catch(e4){}
     return !!box(rim);
   }
-  function outlineStroke(sb){
-    if(!loadAlpha(source))return false;
-    makeRim();
-    doc.activeLayer=rim;
-    var ok=false;
-    try{
-      doc.selection.stroke(white(),thickness,StrokeLocation.OUTSIDE,ColorBlendMode.NORMAL,100,false);
-      ok=true;
-    }catch(e){
-      try{doc.selection.stroke(white(),thickness);ok=true}catch(e2){ok=false}
-    }
-    if(!ok)return false;
-    return subtractSource(sb);
-  }
-  function outlineExpand(sb){
-    if(!loadAlpha(source))return false;
-    makeRim();
-    doc.activeLayer=rim;
-    if(!expandSel(thickness))return false;
-    try{doc.selection.fill(white())}catch(e){return false}
-    return subtractSource(sb);
-  }
+
+  // Clear the half-plane facing away from the light source. This keeps
+  // the editable white line only on the light-facing side.
   function keepLightSide(sb,vx,vy){
     var cx=(sb[0]+sb[2])/2,cy=(sb[1]+sb[3])/2;
     var len=Math.sqrt(vx*vx+vy*vy);
+    if(len<0.01)return false;
     var lx=vx/len,ly=vy/len;
     var pxv=-ly,pyv=lx;
-    var extra=Math.min(sb[2]-sb[0],sb[3]-sb[1])*0.12;
+    var extra=Math.min(sb[2]-sb[0],sb[3]-sb[1])*0.10;
     cx=cx-lx*extra;cy=cy-ly*extra;
     var big=Math.max(px(doc.width),px(doc.height))*4;
     var x1=cx+pxv*big,y1=cy+pyv*big;
     var x2=cx-pxv*big,y2=cy-pyv*big;
     var x3=x2-lx*big,y3=y2-ly*big;
     var x4=x1-lx*big,y4=y1-ly*big;
-    doc.selection.deselect();
+    try{doc.selection.deselect()}catch(e){}
     doc.activeLayer=rim;
     try{
       doc.selection.select([[x1,y1],[x2,y2],[x3,y3],[x4,y4]]);
-    }catch(e){
-      var mx=cx,my=cy;
-      var left=Math.max(0,sb[0]-thickness-2),top=Math.max(0,sb[1]-thickness-2);
-      var right=Math.min(px(doc.width),sb[2]+thickness+2),bottom=Math.min(px(doc.height),sb[3]+thickness+2);
+    }catch(e1){
+      var dw=px(doc.width),dh=px(doc.height);
+      var left=0,top=0,right=dw,bottom=dh;
       if(Math.abs(vx)>=Math.abs(vy)){
-        if(vx>=0)right=mx;else left=mx;
+        if(vx>=0)right=cx;else left=cx;
       }else{
-        if(vy>=0)bottom=my;else top=my;
+        if(vy>=0)bottom=cy;else top=cy;
       }
-      doc.selection.select([[left,top],[right,top],[right,bottom],[left,bottom]]);
+      try{doc.selection.select([[left,top],[right,top],[right,bottom],[left,bottom]])}catch(e2){return false}
     }
-    try{doc.selection.clear()}catch(e2){return false}
-    doc.selection.deselect();
+    try{doc.selection.clear()}catch(e3){return false}
+    try{doc.selection.deselect()}catch(e4){}
     return !!box(rim);
   }
+
   function aboveSource(){
-    if(!sameLayer(rim.parent,source.parent))return false;
-    var layers=source.parent.layers;
-    for(var i=1;i<layers.length;i++){
-      if(sameLayer(layers[i],source))return sameLayer(layers[i-1],rim);
-    }
+    try{
+      if(!sameLayer(rim.parent,source.parent))return false;
+      var layers=source.parent.layers;
+      for(var i=1;i<layers.length;i++)if(sameLayer(layers[i],source))return sameLayer(layers[i-1],rim);
+    }catch(e){}
     return false;
   }
+
   function build(){
     doc=app.activeDocument;
     if(!doc)return 'Brak otwartego dokumentu';
@@ -192,9 +156,9 @@ function ktxCreateRimLight(thickness){
     app.preferences.rulerUnits=Units.PIXELS;
     marker=findNamed(doc.layers,'KTX_LIGHT_SOURCE');
     if(!marker)return 'Najpierw kliknij USTAW ŹRÓDŁO ŚWIATŁA';
-    if(!source||sameLayer(source,marker)||source.name==='KTX_LIGHT_SOURCE'||source.name==='RIM LIGHT')
-      return 'Zaznacz warstwę z renderem';
+    if(!source||sameLayer(source,marker)||source.name==='KTX_LIGHT_SOURCE'||source.name==='RIM LIGHT')return 'Zaznacz warstwę z renderem';
     if(source.typename==='LayerSet')return 'Zaznacz warstwę renderu, nie grupę';
+
     var sb=loadAlpha(source);
     if(!sb)return 'Warstwa renderu nie ma widocznych pikseli';
     var mb=box(marker);
@@ -204,31 +168,22 @@ function ktxCreateRimLight(thickness){
     if(Math.sqrt(vx*vx+vy*vy)<0.01)return 'Przesuń źródło światła poza środek renderu';
     markerVisible=marker.visible;
 
-    stage='outline creation failed';
-    var outlined=false;
-    try{outlined=outlineStroke(sb)}catch(e){outlined=false}
-    if(!outlined){
-      try{outlined=outlineExpand(sb)}catch(e2){outlined=false}
-    }
-    if(!outlined)return 'Nie udało się zrobić zewnętrznego obrysu 2 px';
-
-    stage='center subtraction failed';
-    if(!ringLooksValid(sb,true))return 'Wynik był pełną sylwetką, nie linią';
+    stage='solid outline creation failed';
+    if(!createSolidInnerOutline())return 'Nie udało się utworzyć pełnej białej linii '+thickness+' px';
 
     stage='directional filtering failed';
     if(!keepLightSide(sb,vx,vy))return 'Nie udało się zostawić strony źródła światła';
     if(!box(rim))return 'Po filtrze kierunku nie zostało pikseli';
-    if(!ringLooksValid(sb,false))return 'Po filtrze kierunku warstwa nie jest cienkim obrysem';
 
     stage='layer placement failed';
     try{rim.move(source,ElementPlacement.PLACEBEFORE)}catch(e){return 'Nie udało się położyć RIM LIGHT nad renderem'}
     if(!aboveSource())return 'Warstwa nie trafiła bezpośrednio nad render';
-    if(rim.kind!==LayerKind.NORMAL)return 'RIM LIGHT nie jest warstwą rastrową';
-    try{if(rim.grouped)rim.grouped=false}catch(e){}
+    rim.name='RIM LIGHT';
     rim.opacity=100;
     rim.blendMode=BlendMode.NORMAL;
+    try{if(rim.grouped)rim.grouped=false}catch(e){}
     marker.visible=false;
-    doc.selection.deselect();
+    try{doc.selection.deselect()}catch(e){}
     doc.activeLayer=rim;
     app.preferences.rulerUnits=oldUnits;
     return '';
@@ -237,7 +192,7 @@ function ktxCreateRimLight(thickness){
   var error='';
   try{error=build()}catch(e){error=''+e}
   if(!error){
-    app.echoToOE('KTX_OK|RIM LIGHT gotowy • biały obrys '+thickness+' px • nad renderem');
+    app.echoToOE('KTX_OK|RIM LIGHT gotowy • pełna biała linia '+thickness+' px • nad renderem');
   }else{
     var cleanup=[];
     try{if(doc)doc.selection.deselect()}catch(x){cleanup.push('odznaczenie: '+x)}
