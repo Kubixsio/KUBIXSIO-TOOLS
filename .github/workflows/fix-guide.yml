@@ -1,0 +1,32 @@
+name: Fix lighting guide
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-guide:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+      - name: Convert guide to real JPEG and bump plugin
+        run: |
+          convert obrobkaporadnik.webp -quality 82 obrobkaporadnik.jpg
+          sed -i 's/v=55/v=56/g; s/v55/v56/g' plugin.html
+          git rm .github/workflows/fix-guide.yml
+      - name: Commit fixed guide
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix lighting guide JPEG and bump to v56 [skip ci]"
+          git push
