@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=60">
+<link rel="stylesheet" href="plugin-v35.css?v=61">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -12,7 +12,7 @@
   .guide-lightbox{position:fixed;inset:0;z-index:99999;display:none;overflow:hidden;background:rgba(5,8,13,.97);backdrop-filter:blur(4px)}
   .guide-lightbox.open{display:block}
   .guide-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
-  .guide-stage img{display:block;width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 55px rgba(0,0,0,.55);transform-origin:center center;will-change:transform;cursor:grab;-webkit-user-drag:none;user-drag:none}
+  .guide-stage img{display:block;width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 55px rgba(0,0,0,.55);transform-origin:center center;will-change:transform;cursor:grab;-webkit-user-drag:none;user-drag:none;image-rendering:auto}
   .guide-stage.dragging img{cursor:grabbing}
   .guide-close{position:fixed;top:10px;right:10px;z-index:100000;width:38px;height:38px;border:1px solid rgba(255,255,255,.20);border-radius:10px;background:rgba(20,24,31,.82);color:#fff;font-size:26px;line-height:32px;padding:0;cursor:pointer;backdrop-filter:blur(6px)}
   .guide-close:hover{background:#292f3a}
@@ -41,22 +41,22 @@
   <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=60" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=61" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v60</div>
+  <div class="footer">KUBIXSIO TOOLS • v61</div>
 </div>
 
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
-    <img id="guideLarge" src="obrobkaporadnik.jpg?v=60" alt="Powiększona ściąga światła i cienia" draggable="false">
+    <img id="guideLarge" src="obrobkaporadnik.jpg?v=61" alt="Powiększona ściąga światła i cienia" draggable="false">
   </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 
-<script src="plugin-v35-core.js?v=60"></script>
-<script src="plugin-v35-extra.js?v=60"></script>
+<script src="plugin-v35-core.js?v=61"></script>
+<script src="plugin-v35-extra.js?v=61"></script>
 <script>
 (function(){
   var scale=1, panX=0, panY=0, dragging=false, moved=false, startX=0, startY=0, startPanX=0, startPanY=0;
@@ -71,7 +71,11 @@
     panX=clamp(panX,-mx,mx); panY=clamp(panY,-my,my);
     if(scale<=1){panX=0;panY=0}
   }
-  function apply(){els();clampPan();img.style.transform='translate3d('+panX+'px,'+panY+'px,0) scale('+scale+')'}
+  function apply(){
+    els();clampPan();
+    img.style.imageRendering=scale>=1.35?'pixelated':'auto';
+    img.style.transform='translate3d('+panX+'px,'+panY+'px,0) scale('+scale+')';
+  }
   function reset(){scale=1;panX=0;panY=0;apply()}
   window.openGuideLightbox=function(){
     els(); if(!box)return;
