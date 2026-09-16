@@ -112,7 +112,9 @@ function folderizeTogether() {
         var p = selected[b].parent;
         if (p !== doc && p !== group && p.layers && p.layers.length === 0 && emptyParents.indexOf(p) < 0) emptyParents.push(p);
       }
-      for (var c = 0; c < emptyParents.length; c++) emptyParents[c].remove();
+      for (var c = 0; c < emptyParents.length; c++) {
+        try { emptyParents[c].remove(); } catch (ignore) {}
+      }
     }
     doc.activeLayer = group;
     app.echoToOE('KTX_OK|Utworzono jeden folder z ' + selected.length + ' warstwami');
