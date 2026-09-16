@@ -47,20 +47,17 @@
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
   <div class="footer">KUBIXSIO TOOLS • v65</div>
 </div>
-
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
-    <img id="guideLarge" src="obrobkaporadnik.jpg?v=65" data-full-src="obrobkaporadnik-full.png?v=65" alt="Powiększona ściąga światła i cienia" draggable="false">
+    <img id="guideLarge" src="obrobkaporadnik.jpg?v=65" data-full-src="obrobkaporadnik-full.webp?v=65" alt="Powiększona ściąga światła i cienia" draggable="false">
   </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
-
 <script src="plugin-v35-core.js?v=65"></script>
 <script src="plugin-v35-extra.js?v=65"></script>
 <script>
 (function(){
-  var scale=1, panX=0, panY=0, dragging=false, moved=false, startX=0, startY=0, startPanX=0, startPanY=0;
-  var box, stage, img;
+  var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
   function els(){box=box||document.getElementById('guideLightbox');stage=stage||document.getElementById('guideStage');img=img||document.getElementById('guideLarge')}
   function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
   function clampPan(){els();if(!stage||!img)return;var sw=stage.clientWidth,sh=stage.clientHeight;var iw=img.clientWidth*scale,ih=img.clientHeight*scale;var mx=Math.max(0,(iw-sw)/2+12),my=Math.max(0,(ih-sh)/2+12);panX=clamp(panX,-mx,mx);panY=clamp(panY,-my,my);if(scale<=1){panX=0;panY=0}}
