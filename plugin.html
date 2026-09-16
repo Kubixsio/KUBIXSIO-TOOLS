@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=63">
+<link rel="stylesheet" href="plugin-v35.css?v=64">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -41,22 +41,22 @@
   <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik-hq.webp?v=63" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=64" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v63</div>
+  <div class="footer">KUBIXSIO TOOLS • v64</div>
 </div>
 
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
-    <img id="guideLarge" src="obrobkaporadnik-hq.webp?v=63" alt="Powiększona ściąga światła i cienia" draggable="false">
+    <img id="guideLarge" src="obrobkaporadnik.jpg?v=64" data-full-src="obrobkaporadnik-hq.webp?v=64" alt="Powiększona ściąga światła i cienia" draggable="false">
   </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 
-<script src="plugin-v35-core.js?v=63"></script>
-<script src="plugin-v35-extra.js?v=63"></script>
+<script src="plugin-v35-core.js?v=64"></script>
+<script src="plugin-v35-extra.js?v=64"></script>
 <script>
 (function(){
   var scale=1, panX=0, panY=0, dragging=false, moved=false, startX=0, startY=0, startPanX=0, startPanY=0;
@@ -75,6 +75,11 @@
   function reset(){scale=1;panX=0;panY=0;apply()}
   window.openGuideLightbox=function(){
     els(); if(!box)return;
+    var fullSrc=img.getAttribute('data-full-src');
+    if(fullSrc && img.getAttribute('data-full-loaded')!=='1'){
+      img.src=fullSrc;
+      img.setAttribute('data-full-loaded','1');
+    }
     box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');document.documentElement.classList.add('guide-open');
     requestAnimationFrame(reset);
   };
