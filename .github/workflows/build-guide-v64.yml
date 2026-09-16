@@ -1,0 +1,45 @@
+name: Build guide v64
+on:
+  push:
+    paths:
+      - '.github/workflows/build-guide-v64.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Split thumbnail and HQ lightbox source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('plugin.html')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('?v=63','?v=64')
+          s=s.replace('KUBIXSIO TOOLS • v63','KUBIXSIO TOOLS • v64')
+          s=s.replace('id="guideThumb" class="guide-thumb" src="obrobkaporadnik-hq.webp?v=64"', 'id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=64"')
+          s=s.replace('id="guideLarge" src="obrobkaporadnik-hq.webp?v=64"', 'id="guideLarge" src="obrobkaporadnik.jpg?v=64" data-full-src="obrobkaporadnik-hq.webp?v=64"')
+          old="""    box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');document.documentElement.classList.add('guide-open');
+    requestAnimationFrame(reset);"""
+          new="""    var fullSrc=img.getAttribute('data-full-src');
+    if(fullSrc && img.getAttribute('data-full-loaded')!=='1'){
+      img.src=fullSrc;
+      img.setAttribute('data-full-loaded','1');
+    }
+    box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');document.documentElement.classList.add('guide-open');
+    requestAnimationFrame(reset);"""
+          if old not in s:
+              raise SystemExit('openGuideLightbox block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit v64
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugin.html
+          git commit -m "Split guide preview and HQ lightbox v64"
+          git push
