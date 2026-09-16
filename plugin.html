@@ -4,7 +4,61 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=57">
+<link rel="stylesheet" href="plugin-v35.css?v=58">
+<style>
+  .guide-thumb{
+    display:block;
+    width:100%;
+    height:auto;
+    border-radius:10px;
+    border:1px solid var(--border);
+    cursor:zoom-in;
+    transition:filter .15s ease,transform .15s ease;
+  }
+  .guide-thumb:hover{filter:brightness(1.08)}
+  .guide-thumb:active{transform:scale(.995)}
+  .guide-lightbox{
+    position:fixed;
+    inset:0;
+    z-index:99999;
+    display:none;
+    overflow:auto;
+    box-sizing:border-box;
+    padding:58px 18px 24px;
+    background:rgba(5,8,13,.96);
+    backdrop-filter:blur(4px);
+  }
+  .guide-lightbox.open{display:block}
+  .guide-lightbox img{
+    display:block;
+    width:800px;
+    max-width:none;
+    height:auto;
+    margin:0 auto;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 18px 55px rgba(0,0,0,.55);
+    cursor:zoom-out;
+  }
+  .guide-close{
+    position:fixed;
+    top:12px;
+    right:12px;
+    z-index:100000;
+    width:38px;
+    height:38px;
+    border:1px solid rgba(255,255,255,.18);
+    border-radius:10px;
+    background:#1d222b;
+    color:#fff;
+    font-size:26px;
+    line-height:32px;
+    padding:0;
+    cursor:pointer;
+  }
+  .guide-close:hover{background:#292f3a}
+  body.guide-open{overflow:hidden}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -28,13 +82,42 @@
   <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img src="obrobkaporadnik.jpg?v=57" alt="Ściąga światła i cienia" style="display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border)">
-    <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła.</span>
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=58" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v57</div>
+  <div class="footer">KUBIXSIO TOOLS • v58</div>
 </div>
-<script src="plugin-v35-core.js?v=57"></script>
-<script src="plugin-v35-extra.js?v=57"></script>
+
+<div id="guideLightbox" class="guide-lightbox" aria-hidden="true" onclick="if(event.target===this) closeGuideLightbox()">
+  <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
+  <img src="obrobkaporadnik.jpg?v=58" alt="Powiększona ściąga światła i cienia" onclick="closeGuideLightbox()">
+</div>
+
+<script src="plugin-v35-core.js?v=58"></script>
+<script src="plugin-v35-extra.js?v=58"></script>
+<script>
+  function openGuideLightbox(){
+    var box=document.getElementById('guideLightbox');
+    if(!box)return;
+    box.classList.add('open');
+    box.setAttribute('aria-hidden','false');
+    document.body.classList.add('guide-open');
+    requestAnimationFrame(function(){
+      box.scrollLeft=Math.max(0,(box.scrollWidth-box.clientWidth)/2);
+      box.scrollTop=0;
+    });
+  }
+  function closeGuideLightbox(){
+    var box=document.getElementById('guideLightbox');
+    if(!box)return;
+    box.classList.remove('open');
+    box.setAttribute('aria-hidden','true');
+    document.body.classList.remove('guide-open');
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape')closeGuideLightbox();
+  });
+</script>
 </body>
 </html>
