@@ -4,58 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=58">
+<link rel="stylesheet" href="plugin-v35.css?v=59">
 <style>
-  .guide-thumb{
-    display:block;
-    width:100%;
-    height:auto;
-    border-radius:10px;
-    border:1px solid var(--border);
-    cursor:zoom-in;
-    transition:filter .15s ease,transform .15s ease;
-  }
+  .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
   .guide-thumb:active{transform:scale(.995)}
-  .guide-lightbox{
-    position:fixed;
-    inset:0;
-    z-index:99999;
-    display:none;
-    overflow:auto;
-    box-sizing:border-box;
-    padding:58px 18px 24px;
-    background:rgba(5,8,13,.96);
-    backdrop-filter:blur(4px);
-  }
+  .guide-lightbox{position:fixed;inset:0;z-index:99999;display:none;overflow:hidden;background:rgba(5,8,13,.97);backdrop-filter:blur(4px)}
   .guide-lightbox.open{display:block}
-  .guide-lightbox img{
-    display:block;
-    width:800px;
-    max-width:none;
-    height:auto;
-    margin:0 auto;
-    border-radius:12px;
-    border:1px solid rgba(255,255,255,.16);
-    box-shadow:0 18px 55px rgba(0,0,0,.55);
-    cursor:zoom-out;
-  }
-  .guide-close{
-    position:fixed;
-    top:12px;
-    right:12px;
-    z-index:100000;
-    width:38px;
-    height:38px;
-    border:1px solid rgba(255,255,255,.18);
-    border-radius:10px;
-    background:#1d222b;
-    color:#fff;
-    font-size:26px;
-    line-height:32px;
-    padding:0;
-    cursor:pointer;
-  }
+  .guide-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+  .guide-stage img{display:block;width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 55px rgba(0,0,0,.55);transform-origin:center center;will-change:transform;cursor:grab;-webkit-user-drag:none;user-drag:none}
+  .guide-stage.dragging img{cursor:grabbing}
+  .guide-close{position:fixed;top:10px;right:10px;z-index:100000;width:38px;height:38px;border:1px solid rgba(255,255,255,.20);border-radius:10px;background:rgba(20,24,31,.82);color:#fff;font-size:26px;line-height:32px;padding:0;cursor:pointer;backdrop-filter:blur(6px)}
   .guide-close:hover{background:#292f3a}
   body.guide-open{overflow:hidden}
 </style>
@@ -82,42 +41,84 @@
   <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=58" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=59" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v58</div>
+  <div class="footer">KUBIXSIO TOOLS • v59</div>
 </div>
 
-<div id="guideLightbox" class="guide-lightbox" aria-hidden="true" onclick="if(event.target===this) closeGuideLightbox()">
+<div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
+  <div id="guideStage" class="guide-stage">
+    <img id="guideLarge" src="obrobkaporadnik.jpg?v=59" alt="Powiększona ściąga światła i cienia" draggable="false">
+  </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
-  <img src="obrobkaporadnik.jpg?v=58" alt="Powiększona ściąga światła i cienia" onclick="closeGuideLightbox()">
 </div>
 
-<script src="plugin-v35-core.js?v=58"></script>
-<script src="plugin-v35-extra.js?v=58"></script>
+<script src="plugin-v35-core.js?v=59"></script>
+<script src="plugin-v35-extra.js?v=59"></script>
 <script>
-  function openGuideLightbox(){
-    var box=document.getElementById('guideLightbox');
-    if(!box)return;
-    box.classList.add('open');
-    box.setAttribute('aria-hidden','false');
-    document.body.classList.add('guide-open');
-    requestAnimationFrame(function(){
-      box.scrollLeft=Math.max(0,(box.scrollWidth-box.clientWidth)/2);
-      box.scrollTop=0;
+(function(){
+  var scale=1, panX=0, panY=0, dragging=false, moved=false, startX=0, startY=0, startPanX=0, startPanY=0;
+  var box, stage, img;
+  function els(){box=box||document.getElementById('guideLightbox');stage=stage||document.getElementById('guideStage');img=img||document.getElementById('guideLarge')}
+  function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+  function clampPan(){
+    els(); if(!stage||!img)return;
+    var sw=stage.clientWidth, sh=stage.clientHeight;
+    var iw=img.clientWidth*scale, ih=img.clientHeight*scale;
+    var mx=Math.max(0,(iw-sw)/2+12), my=Math.max(0,(ih-sh)/2+12);
+    panX=clamp(panX,-mx,mx); panY=clamp(panY,-my,my);
+    if(scale<=1){panX=0;panY=0}
+  }
+  function apply(){els();clampPan();img.style.transform='translate3d('+panX+'px,'+panY+'px,0) scale('+scale+')'}
+  function reset(){scale=1;panX=0;panY=0;apply()}
+  window.openGuideLightbox=function(){
+    els(); if(!box)return;
+    box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');
+    requestAnimationFrame(reset);
+  };
+  window.closeGuideLightbox=function(){
+    els(); if(!box)return;
+    box.classList.remove('open');box.setAttribute('aria-hidden','true');document.body.classList.remove('guide-open');
+    dragging=false;stage&&stage.classList.remove('dragging');reset();
+  };
+  function zoomAt(clientX,clientY,next){
+    els();
+    next=clamp(next,1,5);
+    if(next===scale)return;
+    var r=stage.getBoundingClientRect();
+    var mx=clientX-(r.left+r.width/2), my=clientY-(r.top+r.height/2);
+    var ratio=next/scale;
+    panX=mx-ratio*(mx-panX); panY=my-ratio*(my-panY);
+    scale=next;apply();
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    els(); if(!stage||!img)return;
+    stage.addEventListener('wheel',function(e){
+      if(!box.classList.contains('open'))return;
+      e.preventDefault();
+      var factor=Math.exp(-e.deltaY*0.0025);
+      zoomAt(e.clientX,e.clientY,scale*factor);
+    },{passive:false});
+    stage.addEventListener('pointerdown',function(e){
+      if(e.button!==0||scale<=1)return;
+      dragging=true;moved=false;startX=e.clientX;startY=e.clientY;startPanX=panX;startPanY=panY;
+      stage.classList.add('dragging');stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);e.preventDefault();
     });
-  }
-  function closeGuideLightbox(){
-    var box=document.getElementById('guideLightbox');
-    if(!box)return;
-    box.classList.remove('open');
-    box.setAttribute('aria-hidden','true');
-    document.body.classList.remove('guide-open');
-  }
-  document.addEventListener('keydown',function(e){
-    if(e.key==='Escape')closeGuideLightbox();
+    stage.addEventListener('pointermove',function(e){
+      if(!dragging)return;
+      var dx=e.clientX-startX,dy=e.clientY-startY;if(Math.abs(dx)+Math.abs(dy)>3)moved=true;
+      panX=startPanX+dx;panY=startPanY+dy;apply();e.preventDefault();
+    });
+    function endDrag(e){if(!dragging)return;dragging=false;stage.classList.remove('dragging');try{stage.releasePointerCapture(e.pointerId)}catch(_){} }
+    stage.addEventListener('pointerup',endDrag);stage.addEventListener('pointercancel',endDrag);
+    stage.addEventListener('dblclick',function(e){e.preventDefault();reset()});
+    stage.addEventListener('click',function(e){if(e.target===stage&&!moved)closeGuideLightbox();moved=false});
+    window.addEventListener('resize',apply);
   });
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closeGuideLightbox()});
+})();
 </script>
 </body>
 </html>
