@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=68">
+<link rel="stylesheet" href="plugin-v35.css?v=69">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -50,21 +50,21 @@
   </div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik-v67-lossless.webp?v=68" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik-v67-lossless.webp?v=69" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v68</div>
+  <div class="footer">KUBIXSIO TOOLS • v69</div>
 </div>
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
-    <img id="guideLarge" src="obrobkaporadnik-v67-lossless.webp?v=68" data-full-src="obrobkaporadnik-v67-lossless.webp?v=68" alt="Powiększona ściąga światła i cienia" draggable="false">
+    <img id="guideLarge" src="obrobkaporadnik-v67-lossless.webp?v=69" data-full-src="obrobkaporadnik-v67-lossless.webp?v=69" alt="Powiększona ściąga światła i cienia" draggable="false">
   </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
-<script src="plugin-v35-core.js?v=68"></script>
-<script src="plugin-v35-extra.js?v=68"></script>
-<script src="plugin-v68-folder.js?v=68"></script>
+<script src="plugin-v35-core.js?v=69"></script>
+<script src="plugin-v35-extra.js?v=69"></script>
+<script src="plugin-v69-folder.js?v=69"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
@@ -76,7 +76,7 @@
   window.openGuideLightbox=function(){els();if(!box)return;var fullSrc=img.getAttribute('data-full-src');if(fullSrc&&img.getAttribute('data-full-loaded')!=='1'&&img.getAttribute('data-full-loading')!=='1'){img.setAttribute('data-full-loading','1');var preload=new Image();preload.onload=function(){img.src=fullSrc;img.setAttribute('data-full-loaded','1');img.removeAttribute('data-full-loading')};preload.onerror=function(){img.removeAttribute('data-full-loading')};preload.src=fullSrc}box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');document.documentElement.classList.add('guide-open');requestAnimationFrame(reset)};
   window.closeGuideLightbox=function(){els();if(!box)return;box.classList.remove('open');box.setAttribute('aria-hidden','true');document.body.classList.remove('guide-open');document.documentElement.classList.remove('guide-open');dragging=false;stage&&stage.classList.remove('dragging');reset()};
   function zoomAt(clientX,clientY,next){els();next=clamp(next,1,5);if(next===scale)return;var r=stage.getBoundingClientRect();var mx=clientX-(r.left+r.width/2),my=clientY-(r.top+r.height/2);var ratio=next/scale;panX=mx-ratio*(mx-panX);panY=my-ratio*(my-panY);scale=next;apply()}
-  document.addEventListener('DOMContentLoaded',function(){els();if(!stage||!img)return;img.addEventListener('error',function(){if(img.getAttribute('data-full-loaded')==='1'){img.removeAttribute('data-full-loaded');img.src='obrobkaporadnik-v67-lossless.webp?v=68'}});stage.addEventListener('wheel',function(e){if(!box.classList.contains('open'))return;e.preventDefault();var factor=Math.exp(-e.deltaY*0.0025);zoomAt(e.clientX,e.clientY,scale*factor)},{passive:false});stage.addEventListener('pointerdown',function(e){if(e.button!==0||scale<=1)return;dragging=true;moved=false;startX=e.clientX;startY=e.clientY;startPanX=panX;startPanY=panY;stage.classList.add('dragging');stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);e.preventDefault()});stage.addEventListener('pointermove',function(e){if(!dragging)return;var dx=e.clientX-startX,dy=e.clientY-startY;if(Math.abs(dx)+Math.abs(dy)>3)moved=true;panX=startPanX+dx;panY=startPanY+dy;apply();e.preventDefault()});function endDrag(e){if(!dragging)return;dragging=false;stage.classList.remove('dragging');try{stage.releasePointerCapture(e.pointerId)}catch(_){}}stage.addEventListener('pointerup',endDrag);stage.addEventListener('pointercancel',endDrag);stage.addEventListener('dblclick',function(e){e.preventDefault();reset()});stage.addEventListener('click',function(e){if(e.target===stage&&!moved)closeGuideLightbox();moved=false});window.addEventListener('resize',apply)});
+  document.addEventListener('DOMContentLoaded',function(){els();if(!stage||!img)return;img.addEventListener('error',function(){if(img.getAttribute('data-full-loaded')==='1'){img.removeAttribute('data-full-loaded');img.src='obrobkaporadnik-v67-lossless.webp?v=69'}});stage.addEventListener('wheel',function(e){if(!box.classList.contains('open'))return;e.preventDefault();var factor=Math.exp(-e.deltaY*0.0025);zoomAt(e.clientX,e.clientY,scale*factor)},{passive:false});stage.addEventListener('pointerdown',function(e){if(e.button!==0||scale<=1)return;dragging=true;moved=false;startX=e.clientX;startY=e.clientY;startPanX=panX;startPanY=panY;stage.classList.add('dragging');stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);e.preventDefault()});stage.addEventListener('pointermove',function(e){if(!dragging)return;var dx=e.clientX-startX,dy=e.clientY-startY;if(Math.abs(dx)+Math.abs(dy)>3)moved=true;panX=startPanX+dx;panY=startPanY+dy;apply();e.preventDefault()});function endDrag(e){if(!dragging)return;dragging=false;stage.classList.remove('dragging');try{stage.releasePointerCapture(e.pointerId)}catch(_){}}stage.addEventListener('pointerup',endDrag);stage.addEventListener('pointercancel',endDrag);stage.addEventListener('dblclick',function(e){e.preventDefault();reset()});stage.addEventListener('click',function(e){if(e.target===stage&&!moved)closeGuideLightbox();moved=false});window.addEventListener('resize',apply)});
   document.addEventListener('keydown',function(e){if(e.key==='Escape')closeGuideLightbox()});
 })();
 </script>
