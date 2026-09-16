@@ -4,19 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=62">
+<link rel="stylesheet" href="plugin-v35.css?v=63">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
   .guide-thumb:active{transform:scale(.995)}
-  .guide-lightbox{position:fixed;inset:0;z-index:99999;display:none;overflow:hidden;background:rgba(5,8,13,.97);backdrop-filter:blur(4px)}
+  .guide-lightbox{position:fixed;inset:0;width:100%;height:100%;z-index:99999;display:none;overflow:hidden;background:rgba(5,8,13,.97);backdrop-filter:blur(4px);box-sizing:border-box}
   .guide-lightbox.open{display:block}
   .guide-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
   .guide-stage img{display:block;width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 55px rgba(0,0,0,.55);transform-origin:center center;will-change:transform;cursor:grab;-webkit-user-drag:none;user-drag:none;image-rendering:auto}
   .guide-stage.dragging img{cursor:grabbing}
-  .guide-close{position:fixed;top:10px;right:10px;z-index:100000;width:38px;height:38px;border:1px solid rgba(255,255,255,.20);border-radius:10px;background:rgba(20,24,31,.82);color:#fff;font-size:26px;line-height:32px;padding:0;cursor:pointer;backdrop-filter:blur(6px)}
+  .guide-close{position:fixed;top:14px;right:14px;z-index:100000;width:42px;height:42px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:1px solid rgba(255,255,255,.20);border-radius:10px;background:rgba(20,24,31,.88);color:#fff;font-family:Arial,sans-serif;font-size:30px;font-weight:400;line-height:1;padding:0;margin:0;cursor:pointer;backdrop-filter:blur(6px);overflow:hidden}
   .guide-close:hover{background:#292f3a}
-  body.guide-open{overflow:hidden}
+  html.guide-open,body.guide-open{overflow:hidden!important;width:100%!important;height:100%!important}
 </style>
 </head>
 <body>
@@ -41,22 +41,22 @@
   <div class="section"><p class="section-title">DODATKI</p><div class="grid"><button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button></div></div>
   <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
-    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik.jpg?v=62" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
+    <img id="guideThumb" class="guide-thumb" src="obrobkaporadnik-hq.webp?v=63" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v62</div>
+  <div class="footer">KUBIXSIO TOOLS • v63</div>
 </div>
 
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
-    <img id="guideLarge" src="obrobkaporadnik.jpg?v=62" alt="Powiększona ściąga światła i cienia" draggable="false">
+    <img id="guideLarge" src="obrobkaporadnik-hq.webp?v=63" alt="Powiększona ściąga światła i cienia" draggable="false">
   </div>
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 
-<script src="plugin-v35-core.js?v=62"></script>
-<script src="plugin-v35-extra.js?v=62"></script>
+<script src="plugin-v35-core.js?v=63"></script>
+<script src="plugin-v35-extra.js?v=63"></script>
 <script>
 (function(){
   var scale=1, panX=0, panY=0, dragging=false, moved=false, startX=0, startY=0, startPanX=0, startPanY=0;
@@ -75,12 +75,12 @@
   function reset(){scale=1;panX=0;panY=0;apply()}
   window.openGuideLightbox=function(){
     els(); if(!box)return;
-    box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');
+    box.classList.add('open');box.setAttribute('aria-hidden','false');document.body.classList.add('guide-open');document.documentElement.classList.add('guide-open');
     requestAnimationFrame(reset);
   };
   window.closeGuideLightbox=function(){
     els(); if(!box)return;
-    box.classList.remove('open');box.setAttribute('aria-hidden','true');document.body.classList.remove('guide-open');
+    box.classList.remove('open');box.setAttribute('aria-hidden','true');document.body.classList.remove('guide-open');document.documentElement.classList.remove('guide-open');
     dragging=false;stage&&stage.classList.remove('dragging');reset();
   };
   function zoomAt(clientX,clientY,next){
