@@ -57,13 +57,7 @@
       return {id: f.id, libraryId: f.libraryId, name: f.name, favorite: !!f.favorite, count: f.count || 0, lastUsed: f.lastUsed || 0};
     }), lastLibrary: place ? place.value : null};
   }
-  async function sync() {
-    send('snapshot', {snapshot: await snapshot()});
-    try {
-      var libs = await all('libraries');
-      send('handles', {handles: libs.map(function (lib) { return {id: lib.id, handle: lib.handle}; })});
-    } catch (_) {} // Metadata still works if a browser cannot clone directory handles into the panel.
-  }
+  async function sync() { send('snapshot', {snapshot: await snapshot()}); }
   function error(e) {
     if (e && e.name === 'AbortError') { label('Anulowano wybór.'); return; }
     label(e && e.message ? e.message : String(e), true);
