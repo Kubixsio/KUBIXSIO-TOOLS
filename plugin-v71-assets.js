@@ -83,14 +83,13 @@
   function refreshLocal(id) {
     var lib = library(id);
     if (!lib) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
-    // Directory handles live in the helper window.  Refreshing this panel must
-    // therefore stay local and never open that window again.  A real handle
-    // check is performed the next time the user chooses a file.
+    // Directory handles live in the helper window, so this action only resets
+    // the cached label and never opens that window.  The picker performs the
+    // real handle check before showing files (and reports an unavailable drive).
+    lib.status = 'ready';
     saveState();
     render();
-    message(lib.status === 'unavailable'
-      ? 'Folder nadal oznaczony jako niedostępny. Otwórz go przez „Wybierz plik”, aby sprawdzić ponownie.'
-      : 'Folder odświeżony. Nowe pliki będą dostępne przez „Wybierz plik”.');
+    message('Folder odświeżony. Nowe pliki będą dostępne przez „Wybierz plik”.');
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
