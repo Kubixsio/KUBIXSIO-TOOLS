@@ -1,0 +1,265 @@
+(function () {
+  'use strict';
+  var channel = new URL(location.href).searchParams.get('channel');
+  var title = document.getElementById('helperTitle');
+  var content = document.getElementById('helperContent');
+  var status = document.getElementById('helperStatus');
+  var db, pending = null, busy = false;
+
+  function label(text, error) { status.textContent = text || ''; status.className = 'assets-message' + (error ? ' error' : ''); }
+  function node(tag, text, className) { var el = document.createElement(tag); el.textContent = text; if (className) el.className = className; return el; }
+  function button(text, action) { var el = node('button', text); el.type = 'button'; el.addEventListener('click', action); return el; }
+  function screen(heading) { title.textContent = heading; content.replaceChildren(); label(''); }
+  function send(event, extra, transfer) {
+    if (!window.opener) { label('Połączenie z panelem Photopea zostało zamknięte. Otwórz to okno z ASSETS.', true); return; }
+    window.opener.postMessage(Object.assign({type: 'KT_ASSETS', channel: channel, event: event}, extra || {}), location.origin, transfer || []);
+  }
+  function idb(mode, store, method, value) {
+    return new Promise(function (resolve, reject) {
+      var transaction = db.transaction(store, mode), request = transaction.objectStore(store)[method](value);
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+  function all(store) { return idb('readonly', store, 'getAll'); }
+  function get(store, id) { return idb('readonly', store, 'get', id); }
+  function put(store, value) { return idb('readwrite', store, 'put', value); }
+  function remove(store, id) { return idb('readwrite', store, 'delete', id); }
+  function openDatabase() {
+    return new Promise(function (resolve, reject) {
+      var request = indexedDB.open('kubixsio-assets-v1', 1);
+      request.onupgradeneeded = function () {
+        var database = request.result;
+        database.createObjectStore('libraries', {keyPath: 'id'});
+        database.createObjectStore('files', {keyPath: 'id'});
+        database.createObjectStore('settings', {keyPath: 'key'});
+      };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+  async function available(lib) {
+    if (!lib.enabled) return 'disabled';
+    if (!lib.handle) return 'unavailable';
+    try {
+      if ((await lib.handle.queryPermission({mode: 'read'})) !== 'granted') return 'permission';
+      var iterator = lib.handle.values();
+      await iterator.next();
+      return 'ready';
+    } catch (_) { return 'unavailable'; }
+  }
+  async function snapshot() {
+    var libs = await all('libraries'), files = await all('files'), place = await get('settings', 'lastLibrary');
+    var publicLibs = await Promise.all(libs.map(async function (lib) {
+      return {id: lib.id, name: lib.name, enabled: lib.enabled, status: await available(lib)};
+    }));
+    return {libraries: publicLibs, files: files.map(function (f) {
+      return {id: f.id, libraryId: f.libraryId, name: f.name, favorite: !!f.favorite, count: f.count || 0, lastUsed: f.lastUsed || 0};
+    }), lastLibrary: place ? place.value : null};
+  }
+  async function sync() { send('snapshot', {snapshot: await snapshot()}); }
+  function error(e) {
+    if (e && e.name === 'AbortError') { label('Anulowano wybór.'); return; }
+    label(e && e.message ? e.message : String(e), true);
+    send('error', {reason: status.textContent});
+  }
+  async function permission(lib) {
+    var state = await lib.handle.queryPermission({mode: 'read'});
+    if (state === 'granted') return true;
+    state = await lib.handle.requestPermission({mode: 'read'});
+    if (state !== 'granted') throw new Error('Brak zgody na dostęp do folderu. Biblioteka pozostaje zapisana.');
+    return true;
+  }
+  async function chosenLibrary(id) {
+    var lib = await get('libraries', id);
+    if (!lib) throw new Error('Biblioteka nie jest już dostępna w Kubixsio Tools.');
+    if (!lib.enabled) throw new Error('Biblioteka jest wyłączona. Włącz ją przed użyciem.');
+    return lib;
+  }
+  function libraryCard(lib, text) {
+    content.appendChild(node('div', lib.name, 'assets-title'));
+    if (text) content.appendChild(node('p', text, 'assets-muted'));
+  }
+  function add() {
+    screen('DODAJ FOLDER');
+    content.appendChild(node('p', 'Wybierz folder na dysku lub pendrivie. Dostęp jest tylko do odczytu.', 'assets-muted'));
+    content.appendChild(button('Wybierz folder', async function () {
+      if (!window.showDirectoryPicker) { error(new Error('Ta przeglądarka nie obsługuje trwałego dostępu do folderów. Użyj Edge lub Chrome na komputerze.')); return; }
+      try {
+        var handle = await window.showDirectoryPicker({mode: 'read'});
+        screen('NAZWIJ BIBLIOTEKĘ');
+        var input = document.createElement('input');
+        input.className = 'assets-input'; input.value = handle.name; input.maxLength = 60;
+        input.setAttribute('aria-label', 'Nazwa biblioteki');
+        content.appendChild(input);
+        content.appendChild(button('Zapisz bibliotekę', async function () {
+          var name = input.value.trim();
+          if (!name) { label('Podaj nazwę biblioteki.', true); return; }
+          try {
+            await put('libraries', {id: crypto.randomUUID(), name: name, enabled: true, handle: handle});
+            await sync();
+            screen('FOLDER DODANY');
+            content.appendChild(node('p', 'Biblioteka „' + name + '” została zapisana. Możesz zamknąć to okno.', 'assets-muted'));
+          } catch (e) { error(e); }
+        }));
+        input.focus();input.select();
+      } catch (e) { error(e); }
+    }));
+  }
+  async function deliver(lib, handle, path) {
+    if (busy) return;
+    busy = true;
+    try {
+      var file = await handle.getFile();
+      if (!/\.(png|jpe?g|webp|gif|bmp|tiff?|svg|psd|psb|avif|heic|heif|pdf|ai|eps|tga|dds)$/i.test(file.name))
+        throw new Error('Ten typ pliku nie jest obsługiwany jako obraz w tej wersji ASSETS.');
+      var buffer = await file.arrayBuffer();
+      if (!window.opener) throw new Error('Okno Photopea zostało zamknięte.');
+      pending = {id: lib.id + ':' + JSON.stringify(path), libraryId: lib.id, name: file.name, path: path};
+      label('Przekazuję asset do Photopea…');
+      send('asset', {name: file.name, buffer: buffer}, [buffer]);
+    } catch (e) { busy = false; error(e); }
+  }
+  async function pick(id) {
+    try {
+      var lib = await chosenLibrary(id);
+      await put('settings', {key: 'lastLibrary', value: id});
+      await sync();
+      screen('WYBIERZ ASSET');
+      libraryCard(lib, 'Systemowe okno wyboru otworzy się w tym folderze. Możesz wejść też do jego podfolderów.');
+      content.appendChild(button('Wybierz plik', async function () {
+        try {
+          await permission(lib);
+          var files = await window.showOpenFilePicker({startIn: lib.handle, id: 'kubixsio-assets'});
+          if (!files.length) return;
+          var path = await lib.handle.resolve(files[0]);
+          if (!path || !path.length) throw new Error('Wybierz plik z biblioteki „' + lib.name + '”, a nie z innego folderu.');
+          await deliver(lib, files[0], path);
+        } catch (e) { error(e); }
+      }));
+    } catch (e) { error(e); }
+  }
+  async function fileFromPath(lib, path) {
+    var directory = lib.handle;
+    for (var i = 0; i < path.length - 1; i++) directory = await directory.getDirectoryHandle(path[i]);
+    return directory.getFileHandle(path[path.length - 1]);
+  }
+  async function use(id) {
+    try {
+      var item = await get('files', id);
+      if (!item) throw new Error('Nie znaleziono zapisanej pozycji.');
+      var lib = await chosenLibrary(item.libraryId);
+      screen('WSTAW PONOWNIE');
+      libraryCard(lib, item.name);
+      content.appendChild(button('Wstaw asset 1:1', async function () {
+        try { await permission(lib); await deliver(lib, await fileFromPath(lib, item.path), item.path); }
+        catch (e) { error(e); }
+      }));
+    } catch (e) { error(e); }
+  }
+  async function refresh(id) {
+    try {
+      var lib = await get('libraries', id);
+      if (!lib) throw new Error('Nie znaleziono biblioteki.');
+      screen('ODŚWIEŻ FOLDER');
+      libraryCard(lib, 'Nowe pliki będą widoczne w systemowym oknie wyboru. Sprawdzam dostępność folderu.');
+      var state = await available(lib);
+      if (state === 'permission') {
+        content.appendChild(button('Przywróć dostęp', async function () {
+          try { await permission(lib); await refresh(id); } catch (e) { error(e); }
+        }));
+      } else if (state === 'unavailable') {
+        label('Folder niedostępny. Podłącz dysk lub pendrive i spróbuj ponownie.', true);
+        content.appendChild(button('Spróbuj ponownie', function () { refresh(id); }));
+        content.appendChild(button('Wskaż ten folder ponownie', async function () {
+          try {
+            var handle = await window.showDirectoryPicker({mode: 'read'});
+            lib.handle = handle;
+            await put('libraries', lib);
+            await refresh(id);
+          } catch (e) { error(e); }
+        }));
+      } else label(state === 'disabled' ? 'Folder jest wyłączony.' : 'Folder jest dostępny.');
+      await sync();
+    } catch (e) { error(e); }
+  }
+  async function toggle(id) {
+    try {
+      var lib = await get('libraries', id);
+      if (!lib) throw new Error('Nie znaleziono biblioteki.');
+      lib.enabled = !lib.enabled;
+      await put('libraries', lib);
+      await sync();
+      screen('BIBLIOTEKA ' + (lib.enabled ? 'WŁĄCZONA' : 'WYŁĄCZONA'));
+      libraryCard(lib, 'Folder i pliki na dysku pozostały bez zmian.');
+    } catch (e) { error(e); }
+  }
+  async function discard(id) {
+    try {
+      var lib = await get('libraries', id);
+      if (!lib) throw new Error('Nie znaleziono biblioteki.');
+      screen('USUŃ Z KUBIXSIO TOOLS');
+      libraryCard(lib, 'Ta operacja usuwa bibliotekę z listy pluginu. Nie usuwa folderu ani żadnego pliku z komputera.');
+      content.appendChild(button('Usuń tylko z listy', async function () {
+        try {
+          var items = await all('files');
+          await remove('libraries', id);
+          await Promise.all(items.filter(function (f) { return f.libraryId === id; }).map(function (f) { return remove('files', f.id); }));
+          var last = await get('settings', 'lastLibrary');
+          if (last && last.value === id) await remove('settings', 'lastLibrary');
+          await sync();
+          screen('USUNIĘTO Z LISTY');
+          content.appendChild(node('p', 'Pliki na dysku nie zostały usunięte.', 'assets-muted'));
+        } catch (e) { error(e); }
+      }));
+    } catch (e) { error(e); }
+  }
+  async function favorite(id) {
+    try {
+      var item = await get('files', id);
+      if (!item) throw new Error('Nie znaleziono assetu.');
+      item.favorite = !item.favorite;
+      await put('files', item);
+      await sync();
+      screen(item.favorite ? 'DODANO DO ULUBIONYCH' : 'USUNIĘTO Z ULUBIONYCH');
+      content.appendChild(node('p', item.name, 'assets-muted'));
+    } catch (e) { error(e); }
+  }
+  async function imported(command) {
+    if (!pending) return;
+    busy = false;
+    if (!command.ok) { pending = null; label(command.reason || 'Nie udało się wstawić assetu.', true); return; }
+    try {
+      var item = await get('files', pending.id) || Object.assign({count: 0, lastUsed: 0, favorite: false}, pending);
+      item.name = pending.name;
+      item.path = pending.path;
+      item.count++;
+      item.lastUsed = Date.now();
+      await put('files', item);
+      await put('settings', {key: 'lastLibrary', value: pending.libraryId});
+      pending = null;
+      await sync();
+      label('Asset dodany do Photopea w oryginalnym rozmiarze.');
+      setTimeout(function () { window.close(); }, 800);
+    } catch (e) { error(e); }
+  }
+  window.addEventListener('message', function (event) {
+    if (event.origin !== location.origin || event.source !== window.opener || !event.data || event.data.type !== 'KT_ASSETS' || event.data.channel !== channel || !event.data.command) return;
+    var command = event.data.command;
+    if (command.type === 'import-result') { imported(command); return; }
+    if (command.type === 'add') add();
+    else if (command.type === 'pick') pick(command.id);
+    else if (command.type === 'use') use(command.id);
+    else if (command.type === 'refresh') refresh(command.id);
+    else if (command.type === 'toggle') toggle(command.id);
+    else if (command.type === 'remove') discard(command.id);
+    else if (command.type === 'favorite') favorite(command.id);
+    else if (command.type === 'sync') window.close();
+  });
+  if (!window.opener || !channel) { screen('OTWÓRZ Z PHOTOPEA'); label('Otwórz ASSETS w panelu Kubixsio Tools, a potem kliknij Dodaj folder lub Szukaj zasobów.', true); return; }
+  openDatabase().then(async function (database) {
+    db = database;
+    await sync();
+    send('ready');
+  }).catch(function (e) { screen('BRAK DOSTĘPU DO BIBLIOTEK'); error(e); });
+})();
