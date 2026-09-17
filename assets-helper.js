@@ -195,6 +195,7 @@
       try { sourceHandle = await fileFromPath(lib, item.path); }
       catch (e) {
         if (item.favorite && cached) { await deliverCached(item, cached); return; }
+        if (item.favorite) { label('Brak lokalnej kopii. Podłącz pendrive i użyj tego assetu raz, aby zapisać go offline.', true); return; }
         throw e;
       }
       var result = await deliver(lib, sourceHandle, item.path, true);
