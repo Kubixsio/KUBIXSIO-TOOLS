@@ -27,12 +27,14 @@
   function remove(store, id) { return idb('readwrite', store, 'delete', id); }
   function openDatabase() {
     return new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-v1', 1);
+      var request = indexedDB.open('kubixsio-assets-v1', 2);
       request.onupgradeneeded = function () {
         var database = request.result;
-        database.createObjectStore('libraries', {keyPath: 'id'});
-        database.createObjectStore('files', {keyPath: 'id'});
-        database.createObjectStore('settings', {keyPath: 'key'});
+        var hasStore = function (name) { return database.objectStoreNames && database.objectStoreNames.contains && database.objectStoreNames.contains(name); };
+        if (!hasStore('libraries')) database.createObjectStore('libraries', {keyPath: 'id'});
+        if (!hasStore('files')) database.createObjectStore('files', {keyPath: 'id'});
+        if (!hasStore('settings')) database.createObjectStore('settings', {keyPath: 'key'});
+        if (!hasStore('cache')) database.createObjectStore('cache', {keyPath: 'id'});
       };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error); };
@@ -106,7 +108,7 @@
       } catch (e) { error(e); }
     }));
   }
-  async function deliver(lib, handle, path) {
+  async function deliver(lib, handle, path, silent) {
     if (busy) return;
     busy = true;
     try {
@@ -116,8 +118,24 @@
       var buffer = await file.arrayBuffer();
       if (!window.opener) throw new Error('Okno Photopea zostało zamknięte.');
       pending = {id: lib.id + ':' + JSON.stringify(path), libraryId: lib.id, name: file.name, path: path};
+      // Keep a private browser cache of delivered files. This lets favorite
+      // assets be reused when their USB library is temporarily unavailable.
+      try { await put('cache', {id: pending.id, name: file.name, buffer: buffer}); } catch (_) {}
       label('Przekazuję asset do Photopea…');
       send('asset', {name: file.name, buffer: buffer}, [buffer]);
+      return null;
+    } catch (e) { busy = false; if (!silent) error(e); return e; }
+  }
+  async function deliverCached(item, cached) {
+    if (busy) return;
+    busy = true;
+    try {
+      if (!cached || !(cached.buffer instanceof ArrayBuffer)) throw new Error('Brak lokalnej kopii tego ulubionego assetu.');
+      if (!window.opener) throw new Error('Okno Photopea zostało zamknięte.');
+      pending = {id: item.id, libraryId: item.libraryId, name: item.name, path: item.path};
+      label('Wstawiam lokalną kopię ulubionego assetu…');
+      var buffer = cached.buffer;
+      send('asset', {name: item.name, buffer: buffer}, [buffer]);
     } catch (e) { busy = false; error(e); }
   }
   async function pick(id) {
@@ -156,11 +174,16 @@
       var item = await get('files', id);
       if (!item) throw new Error('Nie znaleziono zapisanej pozycji.');
       var lib = await chosenLibrary(item.libraryId);
+      var cached = null;
+      try { cached = await get('cache', item.id); } catch (_) {}
       screen('WSTAWIAM ASSET');
       libraryCard(lib, item.name);
       // A message from the opener does not give this window user activation.
       // If Edge revokes access after a restart, the permission button is unavoidable.
-      if ((await lib.handle.queryPermission({mode: 'read'})) !== 'granted') {
+      var permissionState = 'unavailable';
+      try { permissionState = lib.handle && await lib.handle.queryPermission({mode: 'read'}); } catch (_) {}
+      if (permissionState !== 'granted') {
+        if (item.favorite && cached) { await deliverCached(item, cached); return; }
         label('Przeglądarka wymaga ponownego dostępu do folderu.');
         content.appendChild(button('Przywróć dostęp i wstaw', async function () {
           try { await permission(lib); await deliver(lib, await fileFromPath(lib, item.path), item.path); }
@@ -168,7 +191,15 @@
         }));
         return;
       }
-      await deliver(lib, await fileFromPath(lib, item.path), item.path);
+      var sourceHandle;
+      try { sourceHandle = await fileFromPath(lib, item.path); }
+      catch (e) {
+        if (item.favorite && cached) { await deliverCached(item, cached); return; }
+        throw e;
+      }
+      var result = await deliver(lib, sourceHandle, item.path, true);
+      if (result && item.favorite && cached) { await deliverCached(item, cached); return; }
+      if (result) error(result);
     } catch (e) { error(e); }
   }
   async function refresh(id) {
@@ -232,7 +263,11 @@
     try {
       for (var id of Object.keys(values || {})) {
         var item = await get('files', id);
-        if (item) { item.favorite = !!values[id]; await put('files', item); }
+        if (item) {
+          item.favorite = !!values[id];
+          await put('files', item);
+          if (!item.favorite) { try { await remove('cache', id); } catch (_) {} }
+        }
       }
       await sync();
     } catch (e) { error(e); }
