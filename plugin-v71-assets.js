@@ -5,7 +5,8 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var popup = null, channel = '', command = null, importState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
-  var favorites = {}, directoryHandles = {}, handleDb = null;
+  var favorites = {};
+  var expandedLibraryId = null;
 
   try {
     var saved = JSON.parse(localStorage.getItem(CACHE_KEY));
@@ -20,30 +21,6 @@
   }
   restoreFavorites();
   function saveState() { try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch (_) {} }
-  function openHandleDb() {
-    return new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-panel-handles-v1', 1);
-      request.onupgradeneeded = function () { request.result.createObjectStore('libraries', {keyPath: 'id'}); };
-      request.onsuccess = function () { resolve(request.result); };
-      request.onerror = function () { reject(request.error); };
-    });
-  }
-  function handleStore(mode, method, value) {
-    return new Promise(function (resolve, reject) {
-      var request = handleDb.transaction('libraries', mode).objectStore('libraries')[method](value);
-      request.onsuccess = function () { resolve(request.result); };
-      request.onerror = function () { reject(request.error); };
-    });
-  }
-  if (typeof indexedDB !== 'undefined') openHandleDb().then(async function (db) {
-    handleDb = db;
-    var saved = await handleStore('readonly', 'getAll');
-    saved.forEach(function (entry) { if (!directoryHandles[entry.id]) directoryHandles[entry.id] = entry.handle; });
-    Object.keys(directoryHandles).forEach(function (id) {
-      handleStore('readwrite', 'put', {id: id, handle: directoryHandles[id]}).catch(function () {});
-    });
-  }).catch(function () {});
-
   function byId(id) { return document.getElementById(id); }
   function message(text, error) {
     var el = byId('assetsMessage');
@@ -86,6 +63,7 @@
   function showLibraries() {
     byId('assetsHome').classList.add('assets-hidden');
     byId('assetsBrowser').classList.remove('assets-hidden');
+    expandedLibraryId = null;
     render();
     if (!state.libraries.length) openHelper({type: 'sync'});
   }
@@ -103,25 +81,14 @@
     message(file.favorite ? 'Dodano do ulubionych.' : 'Usunięto z ulubionych.');
   }
   async function refreshLocal(id) {
-    var lib = library(id), handle = directoryHandles[id];
+    var lib = library(id);
     if (!lib) return;
-    if (!handle) { message('Nowe pliki są już dostępne przez „Wybierz plik”. Stan folderu sprawdzę przy jego otwarciu.'); return; }
-    try {
-      var permission = await handle.queryPermission({mode: 'read'});
-      if (permission !== 'granted') {
-        lib.status = 'permission';
-        message('Folder wymaga ponownego dostępu. Kliknij „Wybierz plik”.', true);
-      } else {
-        await handle.values().next();
-        lib.status = 'ready';
-        message('Folder odświeżony. Nowe pliki będą dostępne w „Wybierz plik”.');
-      }
-    } catch (e) {
-      lib.status = e && e.name === 'SecurityError' ? 'permission' : 'unavailable';
-      message(lib.status === 'permission' ? 'Dostęp do folderu wymaga ponownego przyznania.' : 'Folder niedostępny. Podłącz dysk i spróbuj ponownie.', true);
-    }
+    // The helper owns the directory handle. The picker reads the directory live,
+    // so refreshing here only needs to update the UI; it must not open a second window.
+    lib.status = 'ready';
     saveState();
     render();
+    message('Folder odświeżony. Nowe pliki będą dostępne przez „Wybierz plik”.');
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
@@ -142,14 +109,29 @@
   function render() {
     var root = byId('assetsLibraryList');
     root.replaceChildren();
+    if (expandedLibraryId && !library(expandedLibraryId)) expandedLibraryId = null;
     if (!state.libraries.length) root.appendChild(node('p', 'assets-muted', 'Nie masz jeszcze dodanych folderów. Użyj „Dodaj folder”.'));
     state.libraries.forEach(function (lib) {
       var card = node('div', 'assets-card' + (!lib.enabled ? ' disabled' : ''));
-      var head = node('div', 'assets-card-head');
-      head.appendChild(node('span', 'assets-title', lib.name + (lib.id === state.lastLibrary ? ' · ostatnio używany' : '')));
+      var expanded = expandedLibraryId === lib.id;
+      var head = button('', function () {
+        expandedLibraryId = expandedLibraryId === lib.id ? null : lib.id;
+        render();
+        var newHead = byId('assetsLibraryHeader-' + lib.id);
+        if (newHead && newHead.focus) newHead.focus({preventScroll: true});
+      });
+      head.className = 'assets-card-head';
+      head.id = 'assetsLibraryHeader-' + lib.id;
+      head.setAttribute('aria-expanded', String(expanded));
+      head.setAttribute('aria-controls', 'assetsLibraryActions-' + lib.id);
+      head.appendChild(node('span', 'assets-title', lib.name));
       var status = !lib.enabled ? 'wyłączony' : lib.status === 'unavailable' ? 'folder niedostępny' : lib.status === 'permission' ? 'wymaga dostępu' : 'gotowy';
       head.appendChild(node('span', 'assets-state' + (lib.status === 'unavailable' && lib.enabled ? ' unavailable' : ''), status));
-      var actions = node('div', 'assets-actions');
+      var chevron = node('span', 'assets-chevron', expanded ? '⌃' : '⌄');
+      chevron.setAttribute('aria-hidden', 'true');
+      head.appendChild(chevron);
+      var actions = node('div', 'assets-actions' + (expanded ? '' : ' assets-hidden'));
+      actions.id = 'assetsLibraryActions-' + lib.id;
       var choose = button('Wybierz plik', function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled);
       choose.className = 'assets-choose';
       actions.appendChild(choose);
@@ -203,13 +185,6 @@
         saveState();
         render();
         if (command && command.type === 'sync') message('Biblioteki wczytane.');
-      }
-      if (data.event === 'handles' && Array.isArray(data.handles)) {
-        data.handles.forEach(function (entry) {
-          if (!entry || !entry.handle || !library(entry.id)) return;
-          directoryHandles[entry.id] = entry.handle;
-          if (handleDb) handleStore('readwrite', 'put', entry).catch(function () {});
-        });
       }
       if (data.event === 'asset') beginImport(data);
       if (data.event === 'error') message(data.reason, true);
