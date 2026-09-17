@@ -124,7 +124,14 @@
     try {
       var lib = await chosenLibrary(id);
       await put('settings', {key: 'lastLibrary', value: id});
+      var state = await available(lib);
       await sync();
+      if (state !== 'ready') {
+        screen('FOLDER NIEDOSTĘPNY');
+        libraryCard(lib, state === 'permission' ? 'Przeglądarka wymaga ponownego dostępu do tej biblioteki.' : 'Folder jest niedostępny. Podłącz pendrive lub dysk i użyj „Odśwież”.');
+        content.appendChild(button('FOLDER NIEDOSTĘPNY', null, true));
+        return;
+      }
       screen('WYBIERZ ASSET');
       libraryCard(lib, 'Systemowe okno wyboru otworzy się w tym folderze. Możesz wejść też do jego podfolderów.');
       content.appendChild(button('Wybierz plik', async function () {

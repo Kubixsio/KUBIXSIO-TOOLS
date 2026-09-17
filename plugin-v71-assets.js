@@ -81,14 +81,10 @@
     message(file.favorite ? 'Dodano do ulubionych.' : 'Usunięto z ulubionych.');
   }
   async function refreshLocal(id) {
-    var lib = library(id);
-    if (!lib) return;
-    // The helper owns the directory handle. The picker reads the directory live,
-    // so refreshing here only needs to update the UI; it must not open a second window.
-    lib.status = 'ready';
-    saveState();
-    render();
-    message('Folder odświeżony. Nowe pliki będą dostępne przez „Wybierz plik”.');
+    if (!library(id)) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
+    // Only the top-level helper can safely query the directory handle. This also
+    // detects a USB drive that was removed or plugged back in.
+    openHelper({type: 'refresh', id: id});
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
@@ -132,7 +128,8 @@
       head.appendChild(chevron);
       var actions = node('div', 'assets-actions' + (expanded ? '' : ' assets-hidden'));
       actions.id = 'assetsLibraryActions-' + lib.id;
-      var choose = button('Wybierz plik', function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled);
+      var unavailable = lib.status === 'unavailable';
+      var choose = button(unavailable ? 'FOLDER NIEDOSTĘPNY' : 'Wybierz plik', unavailable ? null : function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled || unavailable);
       choose.className = 'assets-choose';
       actions.appendChild(choose);
       actions.appendChild(button('Odśwież', function () { refreshLocal(lib.id); }));
