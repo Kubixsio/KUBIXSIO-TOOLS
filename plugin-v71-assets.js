@@ -144,9 +144,9 @@
       card.appendChild(head);card.appendChild(actions);root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
-    section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,8), false);
+    section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,5), false);
     section('assetsFavorites', 'ULUBIONE', files.filter(function (f) {return f.favorite;}), false);
-    section('assetsFrequent', 'NAJCZĘŚCIEJ UŻYWANE', files.filter(function (f) {return f.count > 0;}).sort(function (a,b) {return b.count-a.count;}).slice(0,8), true);
+    section('assetsFrequent', 'NAJCZĘŚCIEJ UŻYWANE', files.filter(function (f) {return f.count > 0 && !f.favorite;}).sort(function (a,b) {return b.count-a.count;}).slice(0,3), true);
   }
   function fail(reason) { importState = null; setStatus('ASSETS: ' + reason, 'err'); message(reason, true); sendToHelper({type: 'import-result', ok: false, reason: reason}); }
   function beginImport(payload) {
