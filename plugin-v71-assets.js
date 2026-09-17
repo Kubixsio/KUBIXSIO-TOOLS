@@ -80,11 +80,17 @@
     render();
     message(file.favorite ? 'Dodano do ulubionych.' : 'Usunięto z ulubionych.');
   }
-  async function refreshLocal(id) {
-    if (!library(id)) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
-    // Only the top-level helper can safely query the directory handle. This also
-    // detects a USB drive that was removed or plugged back in.
-    openHelper({type: 'refresh', id: id});
+  function refreshLocal(id) {
+    var lib = library(id);
+    if (!lib) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
+    // Directory handles live in the helper window.  Refreshing this panel must
+    // therefore stay local and never open that window again.  A real handle
+    // check is performed the next time the user chooses a file.
+    saveState();
+    render();
+    message(lib.status === 'unavailable'
+      ? 'Folder nadal oznaczony jako niedostępny. Otwórz go przez „Wybierz plik”, aby sprawdzić ponownie.'
+      : 'Folder odświeżony. Nowe pliki będą dostępne przez „Wybierz plik”.');
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
@@ -152,12 +158,24 @@
       return;
     }
     if (!(payload.buffer instanceof ArrayBuffer) || !payload.name) { message('Niepoprawny plik.', true); return; }
-    importState = {id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name: payload.name, buffer: payload.buffer, ready: false, done: false, stage: 'capturing'};
+    var openAsDocument = /\.(psd|psb)$/i.test(payload.name);
+    importState = {id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name: payload.name, buffer: payload.buffer, ready: false, done: false, openAsDocument: openAsDocument, stage: openAsDocument ? 'openingDocument' : 'capturing'};
+    if (openAsDocument) {
+      setStatus('ASSETS: otwieram PSD jako nowy projekt…', 'busy');
+      sendBuffer();
+      return;
+    }
     setStatus('ASSETS: sprawdzam otwarty projekt…', 'busy');
     var id = JSON.stringify(importState.id);
     postScript('try{var d=app.activeDocument;if(!d)throw new Error("Otwórz projekt przed wstawieniem assetu");window.ktxAssetsTarget={doc:d,count:app.documents.length};app.echoToOE("KTX_ASSET_TARGET|"+' + id + ')}catch(e){app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
   }
   function sendBuffer() {
+    if (importState && importState.openAsDocument && importState.stage === 'openingDocument') {
+      var documentBuffer = importState.buffer;
+      importState.buffer = null;
+      window.parent.postMessage(documentBuffer, '*', [documentBuffer]);
+      return;
+    }
     if (!importState || !importState.ready || !importState.done || importState.stage !== 'capturing') return;
     importState.stage = 'opening';
     setStatus('ASSETS: otwieram oryginał…', 'busy');
@@ -191,6 +209,12 @@
     if (event.data === 'done') {
       if (importState.stage === 'capturing') { importState.done = true; sendBuffer(); }
       else if (importState.stage === 'opening') finishImport();
+      else if (importState.stage === 'openingDocument') {
+        var opened = importState;
+        importState = null;
+        setStatus('Otwarto ' + opened.name + ' jako nowy projekt.', '');
+        sendToHelper({type: 'import-result', ok: true});
+      }
       else if (importState.stage === 'complete') {
         var success = importState;
         importState = null;
