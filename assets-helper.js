@@ -57,7 +57,13 @@
       return {id: f.id, libraryId: f.libraryId, name: f.name, favorite: !!f.favorite, count: f.count || 0, lastUsed: f.lastUsed || 0};
     }), lastLibrary: place ? place.value : null};
   }
-  async function sync() { send('snapshot', {snapshot: await snapshot()}); }
+  async function sync() {
+    send('snapshot', {snapshot: await snapshot()});
+    try {
+      var libs = await all('libraries');
+      send('handles', {handles: libs.map(function (lib) { return {id: lib.id, handle: lib.handle}; })});
+    } catch (_) {} // Metadata still works if a browser cannot clone directory handles into the panel.
+  }
   function error(e) {
     if (e && e.name === 'AbortError') { label('Anulowano wybór.'); return; }
     label(e && e.message ? e.message : String(e), true);
@@ -149,12 +155,19 @@
       var item = await get('files', id);
       if (!item) throw new Error('Nie znaleziono zapisanej pozycji.');
       var lib = await chosenLibrary(item.libraryId);
-      screen('WSTAW PONOWNIE');
+      screen('WSTAWIAM ASSET');
       libraryCard(lib, item.name);
-      content.appendChild(button('Wstaw asset 1:1', async function () {
-        try { await permission(lib); await deliver(lib, await fileFromPath(lib, item.path), item.path); }
-        catch (e) { error(e); }
-      }));
+      // A message from the opener does not give this window user activation.
+      // If Edge revokes access after a restart, the permission button is unavoidable.
+      if ((await lib.handle.queryPermission({mode: 'read'})) !== 'granted') {
+        label('Przeglądarka wymaga ponownego dostępu do folderu.');
+        content.appendChild(button('Przywróć dostęp i wstaw', async function () {
+          try { await permission(lib); await deliver(lib, await fileFromPath(lib, item.path), item.path); }
+          catch (e) { error(e); }
+        }));
+        return;
+      }
+      await deliver(lib, await fileFromPath(lib, item.path), item.path);
     } catch (e) { error(e); }
   }
   async function refresh(id) {
@@ -214,15 +227,13 @@
       }));
     } catch (e) { error(e); }
   }
-  async function favorite(id) {
+  async function setFavorites(values) {
     try {
-      var item = await get('files', id);
-      if (!item) throw new Error('Nie znaleziono assetu.');
-      item.favorite = !item.favorite;
-      await put('files', item);
+      for (var id of Object.keys(values || {})) {
+        var item = await get('files', id);
+        if (item) { item.favorite = !!values[id]; await put('files', item); }
+      }
       await sync();
-      screen(item.favorite ? 'DODANO DO ULUBIONYCH' : 'USUNIĘTO Z ULUBIONYCH');
-      content.appendChild(node('p', item.name, 'assets-muted'));
     } catch (e) { error(e); }
   }
   async function imported(command) {
@@ -247,15 +258,18 @@
     if (event.origin !== location.origin || event.source !== window.opener || !event.data || event.data.type !== 'KT_ASSETS' || event.data.channel !== channel || !event.data.command) return;
     var command = event.data.command;
     if (command.type === 'import-result') { imported(command); return; }
+    if (command.favorites) { setFavorites(command.favorites).then(function () { dispatch(command); }); return; }
+    dispatch(command);
+  });
+  function dispatch(command) {
     if (command.type === 'add') add();
     else if (command.type === 'pick') pick(command.id);
     else if (command.type === 'use') use(command.id);
     else if (command.type === 'refresh') refresh(command.id);
     else if (command.type === 'toggle') toggle(command.id);
     else if (command.type === 'remove') discard(command.id);
-    else if (command.type === 'favorite') favorite(command.id);
     else if (command.type === 'sync') window.close();
-  });
+  }
   if (!window.opener || !channel) { screen('OTWÓRZ Z PHOTOPEA'); label('Otwórz ASSETS w panelu Kubixsio Tools, a potem kliknij Dodaj folder lub Szukaj zasobów.', true); return; }
   openDatabase().then(async function (database) {
     db = database;

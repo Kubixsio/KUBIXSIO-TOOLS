@@ -2,13 +2,47 @@
   'use strict';
   var ORIGIN = location.origin;
   var CACHE_KEY = 'kubixsio-assets-panel-v1';
+  var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var popup = null, channel = '', command = null, importState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
+  var favorites = {}, directoryHandles = {}, handleDb = null;
 
   try {
     var saved = JSON.parse(localStorage.getItem(CACHE_KEY));
     if (saved && Array.isArray(saved.libraries) && Array.isArray(saved.files)) state = saved;
   } catch (_) {}
+  try { favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {}; } catch (_) {}
+
+  function restoreFavorites() {
+    state.files.forEach(function (file) {
+      if (Object.prototype.hasOwnProperty.call(favorites, file.id)) file.favorite = favorites[file.id];
+    });
+  }
+  restoreFavorites();
+  function saveState() { try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch (_) {} }
+  function openHandleDb() {
+    return new Promise(function (resolve, reject) {
+      var request = indexedDB.open('kubixsio-assets-panel-handles-v1', 1);
+      request.onupgradeneeded = function () { request.result.createObjectStore('libraries', {keyPath: 'id'}); };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+  function handleStore(mode, method, value) {
+    return new Promise(function (resolve, reject) {
+      var request = handleDb.transaction('libraries', mode).objectStore('libraries')[method](value);
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+  if (typeof indexedDB !== 'undefined') openHandleDb().then(async function (db) {
+    handleDb = db;
+    var saved = await handleStore('readonly', 'getAll');
+    saved.forEach(function (entry) { if (!directoryHandles[entry.id]) directoryHandles[entry.id] = entry.handle; });
+    Object.keys(directoryHandles).forEach(function (id) {
+      handleStore('readwrite', 'put', {id: id, handle: directoryHandles[id]}).catch(function () {});
+    });
+  }).catch(function () {});
 
   function byId(id) { return document.getElementById(id); }
   function message(text, error) {
@@ -34,13 +68,13 @@
   function openHelper(action) {
     if (popup && !popup.closed && importState) { message('Poczekaj na zakończenie wstawiania assetu.', true); return; }
     channel = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
-    command = action;
+    command = Object.assign({}, action, {favorites: Object.keys(favorites).length ? favorites : null});
     var url = new URL('assets-helper.html', location.href);
     url.searchParams.set('channel', channel);
     popup = window.open(url.href, 'kubixsioAssetsHelper', 'width=580,height=700,resizable=yes,scrollbars=yes');
     if (!popup) { message('Przeglądarka zablokowała okno bibliotek. Zezwól na wyskakujące okna dla Photopea.', true); return; }
     popup.focus();
-    message(action.type === 'sync' ? 'Wczytuję biblioteki…' : 'Otwórz pomocnicze okno Kubixsio Tools.');
+    message(action.type === 'sync' ? 'Wczytuję biblioteki…' : action.type === 'use' ? 'Wstawiam asset…' : 'Otwórz pomocnicze okno Kubixsio Tools.');
   }
   function sendToHelper(data) {
     if (popup && !popup.closed) popup.postMessage({type: 'KT_ASSETS', channel: channel, command: data}, ORIGIN);
@@ -60,6 +94,35 @@
     byId('assetsHome').classList.remove('assets-hidden');
     byId('assetsEntry').setAttribute('aria-expanded', 'true');
   }
+  function toggleFavorite(file) {
+    file.favorite = !file.favorite;
+    favorites[file.id] = file.favorite;
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch (_) {}
+    saveState();
+    render();
+    message(file.favorite ? 'Dodano do ulubionych.' : 'Usunięto z ulubionych.');
+  }
+  async function refreshLocal(id) {
+    var lib = library(id), handle = directoryHandles[id];
+    if (!lib) return;
+    if (!handle) { message('Nowe pliki są już dostępne przez „Wybierz plik”. Stan folderu sprawdzę przy jego otwarciu.'); return; }
+    try {
+      var permission = await handle.queryPermission({mode: 'read'});
+      if (permission !== 'granted') {
+        lib.status = 'permission';
+        message('Folder wymaga ponownego dostępu. Kliknij „Wybierz plik”.', true);
+      } else {
+        await handle.values().next();
+        lib.status = 'ready';
+        message('Folder odświeżony. Nowe pliki będą dostępne w „Wybierz plik”.');
+      }
+    } catch (e) {
+      lib.status = e && e.name === 'SecurityError' ? 'permission' : 'unavailable';
+      message(lib.status === 'permission' ? 'Dostęp do folderu wymaga ponownego przyznania.' : 'Folder niedostępny. Podłącz dysk i spróbuj ponownie.', true);
+    }
+    saveState();
+    render();
+  }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
     root.replaceChildren();
@@ -70,7 +133,7 @@
       var name = file.name + (lib ? ' · ' + lib.name : '');
       var use = button(name + (suffix ? ' · ' + file.count : ''), function () { openHelper({type: 'use', id: file.id}); }, !lib || !lib.enabled);
       use.className = 'assets-file';
-      var star = button(file.favorite ? '★' : '☆', function () { openHelper({type: 'favorite', id: file.id}); }, !lib);
+      var star = button(file.favorite ? '★' : '☆', function () { toggleFavorite(file); }, !lib);
       star.className = 'assets-star';
       star.setAttribute('aria-label', file.favorite ? 'Usuń z ulubionych: ' + file.name : 'Dodaj do ulubionych: ' + file.name);
       row.appendChild(use); row.appendChild(star); root.appendChild(row);
@@ -87,11 +150,13 @@
       var status = !lib.enabled ? 'wyłączony' : lib.status === 'unavailable' ? 'folder niedostępny' : lib.status === 'permission' ? 'wymaga dostępu' : 'gotowy';
       head.appendChild(node('span', 'assets-state' + (lib.status === 'unavailable' && lib.enabled ? ' unavailable' : ''), status));
       var actions = node('div', 'assets-actions');
-      actions.appendChild(button('Wybierz plik', function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled));
-      actions.appendChild(button('Odśwież', function () { openHelper({type: 'refresh', id: lib.id}); }));
+      var choose = button('Wybierz plik', function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled);
+      choose.className = 'assets-choose';
+      actions.appendChild(choose);
+      actions.appendChild(button('Odśwież', function () { refreshLocal(lib.id); }));
       actions.appendChild(button(lib.enabled ? 'Wyłącz' : 'Włącz', function () { openHelper({type: 'toggle', id: lib.id}); }));
       actions.appendChild(button('Usuń z Kubixsio Tools', function () { openHelper({type: 'remove', id: lib.id}); }));
-      actions.appendChild(button('Otwórz lokalizację', null, true, 'Strona internetowa nie może otworzyć Eksploratora Windows. Przycisk „Wybierz plik” otwiera systemowe okno w tym folderze.'));
+      actions.appendChild(node('p', 'assets-muted assets-location-note', 'Folder otworzysz w systemowym oknie przez „Wybierz plik”.'));
       card.appendChild(head);card.appendChild(actions);root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
@@ -134,9 +199,17 @@
       if (data.event === 'ready') sendToHelper(command);
       if (data.event === 'snapshot' && data.snapshot) {
         state = data.snapshot;
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch (_) {}
+        restoreFavorites();
+        saveState();
         render();
         if (command && command.type === 'sync') message('Biblioteki wczytane.');
+      }
+      if (data.event === 'handles' && Array.isArray(data.handles)) {
+        data.handles.forEach(function (entry) {
+          if (!entry || !entry.handle || !library(entry.id)) return;
+          directoryHandles[entry.id] = entry.handle;
+          if (handleDb) handleStore('readwrite', 'put', entry).catch(function () {});
+        });
       }
       if (data.event === 'asset') beginImport(data);
       if (data.event === 'error') message(data.reason, true);
