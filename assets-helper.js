@@ -184,7 +184,7 @@
       try { permissionState = lib.handle && await lib.handle.queryPermission({mode: 'read'}); } catch (_) {}
       if (permissionState !== 'granted') {
         if (item.favorite && cached) { await deliverCached(item, cached); return; }
-        label('Przeglądarka wymaga ponownego dostępu do folderu.');
+        label(item.favorite ? 'Brak lokalnej kopii. Podłącz pendrive i użyj tego assetu raz, aby zapisać go offline.' : 'Przeglądarka wymaga ponownego dostępu do folderu.');
         content.appendChild(button('Przywróć dostęp i wstaw', async function () {
           try { await permission(lib); await deliver(lib, await fileFromPath(lib, item.path), item.path); }
           catch (e) { error(e); }
@@ -199,7 +199,10 @@
       }
       var result = await deliver(lib, sourceHandle, item.path, true);
       if (result && item.favorite && cached) { await deliverCached(item, cached); return; }
-      if (result) error(result);
+      if (result) {
+        if (item.favorite) label('Brak lokalnej kopii. Podłącz pendrive i użyj tego assetu raz, aby zapisać go offline.', true);
+        else error(result);
+      }
     } catch (e) { error(e); }
   }
   async function refresh(id) {
