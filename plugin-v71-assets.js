@@ -4,11 +4,13 @@
   var CACHE_KEY = 'kubixsio-assets-panel-v1';
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
+  var PATH_KEY = 'kubixsio-assets-folder-path-v1';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
   var expandedLibraryId = null;
-  var currentLibraryId = null, catalog = [], catalogComplete = false, savedPlace = '';
+  var currentLibraryId = null, catalog = [], catalogFolders = [], folderPath = [], savePath = [], saveReturnId = null;
+  var catalogComplete = false, catalogId = null, savedPlace = '';
 
   try {
     var saved = JSON.parse(localStorage.getItem(CACHE_KEY));
@@ -70,7 +72,11 @@
     if (!open) {
       byId('assetsHome').classList.add('assets-hidden');
       byId('assetsBrowser').classList.add('assets-hidden');
-    } else if (savedPlace && library(savedPlace) && library(savedPlace).enabled) openLibrary(savedPlace);
+    } else if (savedPlace && library(savedPlace) && library(savedPlace).enabled) {
+      var lastPath = [];
+      try { lastPath = JSON.parse(localStorage.getItem(PATH_KEY)) || []; } catch (_) {}
+      openLibrary(savedPlace, Array.isArray(lastPath) ? lastPath : []);
+    }
     else byId('assetsHome').classList.remove('assets-hidden');
     byId('assetsEntry').setAttribute('aria-expanded', String(open));
   }
@@ -87,28 +93,30 @@
   }
   function goBack() {
     if (!byId('assetsSavePanel').classList.contains('assets-hidden')) {
-      if (savedPlace && library(savedPlace) && library(savedPlace).enabled) openLibrary(savedPlace);
+      if (saveReturnId && library(saveReturnId) && library(saveReturnId).enabled) openLibrary(saveReturnId, folderPath);
       else showLibraries();
       return;
     }
+    if (currentLibraryId && folderPath.length) { folderPath.pop(); renderDirectory(); return; }
     if (currentLibraryId) { choosePlace(''); showLibraries(); return; }
     byId('assetsBrowser').classList.add('assets-hidden');
     byId('assetsHome').classList.remove('assets-hidden');
     byId('assetsEntry').setAttribute('aria-expanded', 'true');
   }
-  function openLibrary(id) {
+  function openLibrary(id, path) {
     var lib = library(id);
     if (!lib || !lib.enabled) { showLibraries(); return; }
     currentLibraryId = id;
+    folderPath = Array.isArray(path) ? path.slice() : [];
     choosePlace(id);
     byId('assetsHome').classList.add('assets-hidden');
     byId('assetsBrowser').classList.remove('assets-hidden');
     byId('assetsOverview').classList.add('assets-hidden');
     byId('assetsSavePanel').classList.add('assets-hidden');
     byId('assetsLibraryView').classList.remove('assets-hidden');
-    byId('assetsLibraryTitle').textContent = lib.name;
-    catalog = []; catalogComplete = false;
-    byId('assetsTileGrid').replaceChildren();
+    catalogId = id; catalog = []; catalogFolders = []; catalogComplete = false;
+    byId('assetsTileGrid').replaceChildren(); byId('assetsFolderList').replaceChildren();
+    byId('assetsLibraryTitle').textContent = lib.name + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
     byId('assetsCatalogState').textContent = lib.status === 'unavailable' ? 'Sprawdzam dostępność folderu…' : 'Wczytuję pliki z folderu…';
     openHelper({type: 'browse', id: id});
   }
@@ -120,13 +128,44 @@
       var option = node('option', '', lib.name); option.value = lib.id; select.appendChild(option);
     });
     if (currentLibraryId && library(currentLibraryId) && library(currentLibraryId).enabled) select.value = currentLibraryId;
+    saveReturnId = currentLibraryId;
+    savePath = select.value === currentLibraryId ? folderPath.slice() : [];
     byId('assetsHome').classList.add('assets-hidden');
     byId('assetsBrowser').classList.remove('assets-hidden');
     byId('assetsOverview').classList.add('assets-hidden');
     byId('assetsLibraryView').classList.add('assets-hidden');
     byId('assetsSavePanel').classList.remove('assets-hidden');
     if (!select.options.length) message('Dodaj i włącz bibliotekę przed zapisem.', true);
+    loadSaveFolders();
     byId('assetsSaveName').focus();
+  }
+  function samePath(a, b) { return a.length === b.length && a.every(function (part, index) { return part === b[index]; }); }
+  function childFolders(path) {
+    return catalogFolders.filter(function (parts) { return parts.length === path.length + 1 && samePath(parts.slice(0,-1), path); })
+      .sort(function (a,b) { return a[a.length-1].localeCompare(b[b.length-1], 'pl'); });
+  }
+  function renderSaveFolders() {
+    var root = byId('assetsSaveFolders'); root.replaceChildren();
+    var lib = library(byId('assetsSaveLibrary').value);
+    byId('assetsSaveFolderPath').textContent = 'Zapis do: ' + (lib ? lib.name : '') + (savePath.length ? ' / ' + savePath.join(' / ') : '');
+    if (savePath.length) root.appendChild(button('← Folder wyżej', function () { savePath.pop(); renderSaveFolders(); }));
+    if (catalogId !== byId('assetsSaveLibrary').value || !catalogComplete) {
+      root.appendChild(node('p', 'assets-muted', 'Wczytuję podfoldery…'));
+      return;
+    }
+    childFolders(savePath).forEach(function (parts) {
+      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { savePath = parts.slice(); renderSaveFolders(); });
+      entry.className = 'assets-folder-entry'; root.appendChild(entry);
+    });
+  }
+  function loadSaveFolders() {
+    var id = byId('assetsSaveLibrary').value;
+    savePath = id === currentLibraryId ? folderPath.slice() : [];
+    if (id && (catalogId !== id || !catalogComplete)) {
+      catalogId = id; catalog = []; catalogFolders = []; catalogComplete = false;
+      openHelper({type:'browse', id:id});
+    }
+    renderSaveFolders();
   }
   function confirmSave() {
     if (exportState) { message('Trwa już zapis warstwy.', true); return; }
@@ -136,8 +175,9 @@
     if (!/\.png$/i.test(name)) name += '.png';
     if (!/^[^\\/:*?"<>|\x00-\x1f]+\.png$/i.test(name) || /[. ]\.png$/i.test(name)) { message('Podaj poprawną nazwę pliku PNG.', true); return; }
     if (vignetteStage !== 'idle' || watermarkStage !== 'idle' || window.folderizeBusy || importState) { message('Photopea wykonuje inne działanie.', true); return; }
-    exportState = {id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), libraryId: id, name: name, stage: 'permission', buffer: null};
-    openHelper({type: 'save-layer', id: id, name: name});
+    if (catalogId !== id || !catalogComplete) { message('Poczekaj, aż wczytają się foldery biblioteki.', true); return; }
+    exportState = {id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), libraryId: id, name: name, path: savePath.slice(), stage: 'permission', buffer: null};
+    openHelper({type: 'save-layer', id: id, name: name, path: savePath.slice()});
     message('Sprawdzam dostęp do zapisu w bibliotece…');
   }
   function showPreview(item) {
@@ -159,7 +199,6 @@
   function addTiles(items) {
     var root = byId('assetsTileGrid');
     items.forEach(function (item) {
-      catalog.push(item);
       var tile = node('div', 'assets-tile');
       var open = button('', function () { openHelper({type: 'use-path', id: item.libraryId, path: item.path}); });
       open.className = 'assets-tile-open'; open.title = 'Wstaw asset • PPM: podgląd';
@@ -179,7 +218,31 @@
       tools.appendChild(info); tools.appendChild(star);
       tile.appendChild(open); tile.appendChild(tools); root.appendChild(tile);
     });
-    byId('assetsCatalogState').textContent = 'Assety: ' + catalog.length + (catalogComplete ? '' : ' • wczytywanie…');
+  }
+  function renderDirectory() {
+    if (!currentLibraryId || catalogId !== currentLibraryId) return;
+    try { localStorage.setItem(PATH_KEY, JSON.stringify(folderPath)); } catch (_) {}
+    var lib = library(currentLibraryId), root = byId('assetsFolderList'), tiles = byId('assetsTileGrid');
+    root.replaceChildren(); tiles.replaceChildren();
+    byId('assetsLibraryTitle').textContent = (lib ? lib.name : '') + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
+    var folders = childFolders(folderPath);
+    folders.forEach(function (parts) {
+      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { folderPath = parts.slice(); renderDirectory(); });
+      entry.className = 'assets-folder-entry'; root.appendChild(entry);
+    });
+    // When a directory contains both subfolders and files, keep its files reachable
+    // through a separate entry while keeping the folder list compact.
+    var files = catalog.filter(function (item) { return samePath(item.path.slice(0,-1), folderPath); });
+    if (!folders.length) addTiles(files);
+    else if (files.length) {
+      root.appendChild(button('Obrazy w tym folderze (' + files.length + ') ›', function () {
+        root.replaceChildren();
+        root.appendChild(button('← Podfoldery', renderDirectory));
+        tiles.replaceChildren(); addTiles(files);
+      }));
+    }
+    byId('assetsCatalogState').textContent = catalogComplete ?
+      (folders.length ? 'Podfoldery: ' + folders.length : 'Assety: ' + files.length) + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : 'Wczytuję zawartość folderu…';
   }
   function toggleFavorite(file) {
     file.favorite = !file.favorite;
@@ -218,28 +281,23 @@
     state.libraries.forEach(function (lib) {
       var card = node('div', 'assets-card' + (!lib.enabled ? ' disabled' : ''));
       var expanded = expandedLibraryId === lib.id;
-      var head = button('', function () {
-        expandedLibraryId = expandedLibraryId === lib.id ? null : lib.id;
-        render();
-        var newHead = byId('assetsLibraryHeader-' + lib.id);
-        if (newHead && newHead.focus) newHead.focus({preventScroll: true});
-      });
+      var head = button('', function () { openLibrary(lib.id); }, !lib.enabled);
       head.className = 'assets-card-head';
-      head.id = 'assetsLibraryHeader-' + lib.id;
-      head.setAttribute('aria-expanded', String(expanded));
-      head.setAttribute('aria-controls', 'assetsLibraryActions-' + lib.id);
-      head.appendChild(node('span', 'assets-title', lib.name));
+      head.appendChild(node('span', 'assets-title', '📁 ' + lib.name));
       var status = !lib.enabled ? 'wyłączony' : lib.status === 'unavailable' ? 'folder niedostępny' : lib.status === 'permission' ? 'wymaga dostępu' : 'gotowy';
       head.appendChild(node('span', 'assets-state' + (lib.status === 'unavailable' && lib.enabled ? ' unavailable' : ''), status));
-      var chevron = node('span', 'assets-chevron', expanded ? '⌃' : '⌄');
-      chevron.setAttribute('aria-hidden', 'true');
-      head.appendChild(chevron);
+      var manage = button('⋯', function () {
+        expandedLibraryId = expandedLibraryId === lib.id ? null : lib.id;
+        render();
+        var newManage = byId('assetsLibraryManage-' + lib.id);
+        if (newManage && newManage.focus) newManage.focus({preventScroll: true});
+      });
+      manage.className = 'assets-manage'; manage.id = 'assetsLibraryManage-' + lib.id;
+      manage.title = 'Opcje biblioteki'; manage.setAttribute('aria-label', 'Opcje biblioteki ' + lib.name);
+      manage.setAttribute('aria-expanded', String(expanded)); manage.setAttribute('aria-controls', 'assetsLibraryActions-' + lib.id);
       var actions = node('div', 'assets-actions' + (expanded ? '' : ' assets-hidden'));
       actions.id = 'assetsLibraryActions-' + lib.id;
       var unavailable = lib.status === 'unavailable';
-      var browse = button('Otwórz bibliotekę', function () { openLibrary(lib.id); }, !lib.enabled);
-      browse.className = 'assets-choose';
-      actions.appendChild(browse);
       var choose = button(unavailable ? 'FOLDER NIEDOSTĘPNY' : 'Wybierz plik', unavailable ? null : function () { openHelper({type: 'pick', id: lib.id}); }, !lib.enabled || unavailable);
       choose.className = 'assets-choose';
       actions.appendChild(choose);
@@ -247,7 +305,8 @@
       actions.appendChild(button(lib.enabled ? 'Wyłącz' : 'Włącz', function () { openHelper({type: 'toggle', id: lib.id}); }));
       actions.appendChild(button('Usuń z Kubixsio Tools', function () { openHelper({type: 'remove', id: lib.id}); }));
       actions.appendChild(node('p', 'assets-muted assets-location-note', '„Wybierz plik” otwiera systemowe okno jako alternatywny sposób wstawienia.'));
-      card.appendChild(head);card.appendChild(actions);root.appendChild(card);
+      var top = node('div', 'assets-card-top'); top.appendChild(head); top.appendChild(manage);
+      card.appendChild(top);card.appendChild(actions);root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
     section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,5), false);
@@ -312,23 +371,52 @@
       // The new document has only the chosen layer on a transparent canvas.
       // Trimming removes transparent margins when Photopea supports it.
       try { temporary.trim(TrimType.TRANSPARENT, true, true, true, true); } catch (_) {}
-      temporary.saveToOE('png');
-      app.echoToOE('KTX_ASSET_EXPORT_OK|' + id);
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
-    finally {
+      window.ktxAssetsExport = {id:id, source:source, temporary:temporary};
+      app.echoToOE('KTX_ASSET_PREPARED|' + id);
+    } catch (e) {
       if (temporary) try { temporary.close(SaveOptions.DONOTSAVECHANGES); } catch (_) {}
       if (source) try { app.activeDocument = source; } catch (_) {}
+      app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString());
     }
   }
+  function savePreparedLayer(id) {
+    try {
+      var job = window.ktxAssetsExport;
+      if (!job || job.id !== id || !job.temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      app.activeDocument = job.temporary;
+      job.temporary.saveToOE('png');
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+  }
+  function closePreparedLayer(id) {
+    try {
+      var job = window.ktxAssetsExport;
+      if (job && job.id === id) {
+        window.ktxAssetsExport = null;
+        try { job.temporary.close(SaveOptions.DONOTSAVECHANGES); }
+        finally { app.activeDocument = job.source; }
+      }
+      app.echoToOE('KTX_ASSET_CLOSED|' + id);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+  }
   function startExport(data) {
-    if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name) return;
-    exportState.stage = 'exporting';
+    if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name || !samePath(exportState.path, data.path || [])) return;
+    exportState.stage = 'preparing';
     setStatus('ASSETS: eksportuję zaznaczoną warstwę…', 'busy');
     postScript('(' + exportSelectedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
   }
+  function finishExport() {
+    if (!exportState || exportState.stage !== 'saving' || !exportState.buffer || !exportState.done) return;
+    exportState.stage = 'cleaning';
+    if (exportState.timer) clearTimeout(exportState.timer);
+    postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+  }
   function failExport(reason) {
     if (!exportState) return;
+    var failed = exportState;
+    if (failed.timer) clearTimeout(failed.timer);
     exportState = null;
+    if (failed.stage === 'preparing' || failed.stage === 'saving')
+      postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(failed.id) + ');');
     setStatus('ASSETS: ' + reason, 'err');
     message(reason, true);
     sendToHelper({type:'write-cancel', reason:reason});
@@ -346,25 +434,37 @@
         if (currentLibraryId && !library(currentLibraryId)) { choosePlace(''); showLibraries(); }
         if (command && command.type === 'sync') message('Biblioteki wczytane.');
       }
-      if (data.event === 'catalog-start' && data.id === currentLibraryId) {
-        catalog = []; catalogComplete = false;
-        byId('assetsTileGrid').replaceChildren();
-        byId('assetsCatalogState').textContent = 'Wczytuję assety…';
+      if (data.event === 'catalog-start' && data.id === catalogId) {
+        catalog = []; catalogFolders = []; catalogComplete = false;
+        if (data.id === currentLibraryId) renderDirectory();
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
       }
-      if (data.event === 'catalog-items' && data.id === currentLibraryId && Array.isArray(data.items)) addTiles(data.items);
-      if (data.event === 'catalog-complete' && data.id === currentLibraryId) {
+      if (data.event === 'catalog-folder' && data.id === catalogId && Array.isArray(data.path)) {
+        catalogFolders.push(data.path);
+        if (data.id === currentLibraryId && data.path.length === folderPath.length + 1 && samePath(data.path.slice(0,-1), folderPath)) renderDirectory();
+      }
+      if (data.event === 'catalog-items' && data.id === catalogId && Array.isArray(data.items)) {
+        catalog.push.apply(catalog, data.items);
+        if (data.id === currentLibraryId && data.items.some(function (item) { return samePath(item.path.slice(0,-1), folderPath); })) renderDirectory();
+      }
+      if (data.event === 'catalog-complete' && data.id === catalogId) {
         catalogComplete = true;
-        byId('assetsCatalogState').textContent = catalog.length ? 'Assety: ' + catalog.length : 'Ten folder nie zawiera obsługiwanych assetów.';
+        if (data.id === currentLibraryId && folderPath.length && !catalogFolders.some(function (parts) { return samePath(parts, folderPath); })) folderPath = [];
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden') && savePath.length && !catalogFolders.some(function (parts) { return samePath(parts, savePath); })) savePath = [];
+        if (data.id === currentLibraryId) renderDirectory();
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
       }
-      if (data.event === 'catalog-error' && data.id === currentLibraryId) byId('assetsCatalogState').textContent = data.reason;
+      if (data.event === 'catalog-error' && data.id === catalogId) {
+        if (data.id === currentLibraryId) byId('assetsCatalogState').textContent = data.reason;
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) { byId('assetsSaveFolders').replaceChildren(node('p','assets-muted',data.reason)); }
+      }
       if (data.event === 'write-ready') startExport(data);
-      if (data.event === 'write-complete' && exportState && data.id === exportState.libraryId && data.name === exportState.name) {
-        var savedName = exportState.name;
+      if (data.event === 'write-complete' && exportState && data.id === exportState.libraryId && data.name === exportState.name && samePath(data.path || [], exportState.path)) {
+        var savedName = exportState.name, savedPath = exportState.path.slice();
         exportState = null;
-        currentLibraryId = data.id; choosePlace(data.id);
-        byId('assetsSavePanel').classList.add('assets-hidden');
-        byId('assetsLibraryView').classList.remove('assets-hidden');
-        byId('assetsLibraryTitle').textContent = library(data.id) ? library(data.id).name : '';
+        currentLibraryId = data.id; folderPath = savedPath; choosePlace(data.id);
+        byId('assetsSavePanel').classList.add('assets-hidden'); byId('assetsLibraryView').classList.remove('assets-hidden');
+        renderDirectory();
         message('Zapisano ' + savedName + ' do ASSETS.');
         setStatus('ASSETS: zapisano ' + savedName, '');
       }
@@ -373,14 +473,30 @@
       return;
     }
     if (exportState && event.source === window.parent) {
-      if (event.data instanceof ArrayBuffer && exportState.stage === 'exporting') { exportState.buffer = event.data; return; }
+      if (event.data instanceof ArrayBuffer && exportState.stage === 'saving') {
+        exportState.buffer = event.data; finishExport(); return;
+      }
       if (typeof event.data === 'string') {
-        var ok = 'KTX_ASSET_EXPORT_OK|' + exportState.id;
         var err = 'KTX_ASSET_EXPORT_ERR|' + exportState.id + '|';
-        if (event.data === ok) { exportState.ack = true; return; }
         if (event.data.indexOf(err) === 0) { failExport(event.data.substring(err.length)); return; }
-        if (event.data === 'done' && exportState.stage === 'exporting') {
-          if (!exportState.ack || !exportState.buffer) { failExport('Nie udało się otrzymać PNG zaznaczonej warstwy.'); return; }
+        if (event.data === 'KTX_ASSET_PREPARED|' + exportState.id && exportState.stage === 'preparing') { exportState.ack = true; return; }
+        if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') { exportState.ack = true; return; }
+        if (event.data === 'done' && exportState.stage === 'preparing') {
+          if (!exportState.ack) { failExport('Nie udało się przygotować zaznaczonej warstwy.'); return; }
+          exportState.stage = 'saving'; exportState.ack = false;
+          postScript('(' + savePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+          return;
+        }
+        if (event.data === 'done' && exportState.stage === 'saving') {
+          exportState.done = true;
+          finishExport();
+          if (exportState && exportState.stage === 'saving' && !exportState.timer) exportState.timer = setTimeout(function () {
+            if (exportState && exportState.stage === 'saving') failExport('Photopea nie zwróciła PNG zaznaczonej warstwy.');
+          }, 20000);
+          return;
+        }
+        if (event.data === 'done' && exportState.stage === 'cleaning') {
+          if (!exportState.ack || !exportState.buffer) { failExport('Nie udało się zakończyć eksportu warstwy.'); return; }
           exportState.stage = 'writing';
           var out = exportState.buffer;
           exportState.buffer = null;
@@ -423,6 +539,12 @@
   byId('assetsSave').addEventListener('click', showSaveForm);
   byId('assetsSaveHere').addEventListener('click', showSaveForm);
   byId('assetsSaveConfirm').addEventListener('click', confirmSave);
+  byId('assetsSaveLibrary').addEventListener('change', loadSaveFolders);
+  byId('assetsQuickToggle').addEventListener('click', function () {
+    var lists = byId('assetsQuickLists'), open = lists.classList.contains('assets-hidden');
+    lists.classList.toggle('assets-hidden', !open);
+    byId('assetsQuickToggle').setAttribute('aria-expanded', String(open));
+  });
   byId('assetsBack').addEventListener('click', goBack);
   byId('assetsPreviewClose').addEventListener('click', closePreview);
   byId('assetsPreview').addEventListener('click', function (event) { if (event.target === event.currentTarget) closePreview(); });

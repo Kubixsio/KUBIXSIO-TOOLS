@@ -228,7 +228,7 @@
         for await (var handle of dir.values()) {
           if (generation !== scanning) return;
           var parts = path.concat(handle.name);
-          if (handle.kind === 'directory') { await walk(handle, parts); continue; }
+          if (handle.kind === 'directory') { send('catalog-folder', {id: id, path: parts}); await walk(handle, parts); continue; }
           if (!supported.test(handle.name)) continue;
           try {
             var file = await handle.getFile();
@@ -275,12 +275,13 @@
       else if (result) error(result);
     } catch (e) { error(e); }
   }
-  async function saveLayer(id, filename) {
+  async function saveLayer(id, filename, path) {
     try {
       var lib = await chosenLibrary(id);
+      if (!Array.isArray(path) || path.some(function (part) { return typeof part !== 'string' || !part || part === '.' || part === '..' || /[\\/]/.test(part); })) throw new Error('Niepoprawna ścieżka folderu.');
       if (!/^[^\\/:*?"<>|\x00-\x1f]+\.png$/i.test(filename) || /[. ]\.png$/i.test(filename)) throw new Error('Podaj poprawną nazwę pliku PNG.');
       screen('ZAPISZ DO ASSETS');
-      libraryCard(lib, filename);
+      libraryCard(lib, (path.length ? path.join(' / ') + ' / ' : '') + filename);
       if ((await available(lib)) === 'unavailable') throw new Error('Folder jest niedostępny. Podłącz dysk i spróbuj ponownie.');
       async function continueSave() {
         try {
@@ -288,11 +289,14 @@
             var granted = await lib.handle.requestPermission({mode: 'readwrite'});
             if (granted !== 'granted') throw new Error('Brak zgody na zapis w tym folderze.');
           }
-          try { await lib.handle.getFileHandle(filename); throw new Error('Plik o tej nazwie już istnieje. Podaj inną nazwę w panelu.'); }
+          var directory = lib.handle;
+          for (var i = 0; i < path.length; i++) directory = await directory.getDirectoryHandle(path[i]);
+          try { await directory.getFileHandle(filename); throw new Error('Plik o tej nazwie już istnieje. Podaj inną nazwę w panelu.'); }
           catch (e) { if (e.name !== 'NotFoundError') throw e; }
-          saving = {id: id, name: filename, library: lib};
+          saving = {id: id, name: filename, path: path, directory: directory};
+          content.replaceChildren(); libraryCard(lib, (path.length ? path.join(' / ') + ' / ' : '') + filename);
           label('Eksportuję zaznaczoną warstwę z Photopea…');
-          send('write-ready', {id: id, name: filename});
+          send('write-ready', {id: id, name: filename, path: path});
         } catch (e) { error(e); }
       }
       if ((await lib.handle.queryPermission({mode: 'readwrite'})) === 'granted') await continueSave();
@@ -306,12 +310,12 @@
       if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 8) throw new Error('Photopea nie zwróciła poprawnego PNG.');
       var signature = new Uint8Array(buffer, 0, 8);
       if ([137,80,78,71,13,10,26,10].some(function (x, i) { return signature[i] !== x; })) throw new Error('Photopea nie zwróciła pliku PNG.');
-      var handle = await job.library.handle.getFileHandle(job.name, {create: true});
+      var handle = await job.directory.getFileHandle(job.name, {create: true});
       var stream = await handle.createWritable();
       try { await stream.write(buffer); await stream.close(); }
       catch (e) { try { await stream.abort(); } catch (_) {} throw e; }
       await sync();
-      send('write-complete', {id: job.id, name: job.name});
+      send('write-complete', {id: job.id, name: job.name, path: job.path});
       saving = null;
       label('Zapisano warstwę jako ' + job.name + '.');
       await browse(job.id);
@@ -465,7 +469,7 @@
     else if (command.type === 'sync') window.close();
     else if (command.type === 'browse') browse(command.id);
     else if (command.type === 'use-path') usePath(command.id, command.path);
-    else if (command.type === 'save-layer') saveLayer(command.id, command.name);
+    else if (command.type === 'save-layer') saveLayer(command.id, command.name, command.path || []);
   }
   if (!window.opener || !channel) { screen('OTWÓRZ Z PHOTOPEA'); label('Otwórz ASSETS w panelu Kubixsio Tools, a potem kliknij Dodaj folder lub Szukaj zasobów.', true); return; }
   openDatabase().then(async function (database) {
