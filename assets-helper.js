@@ -221,31 +221,78 @@
         return;
       }
       screen('ODCZYTUJĘ ASSETY');
-      libraryCard(lib, 'Assety pojawią się w panelu Photopea. Możesz wrócić do panelu.');
+      libraryCard(lib, 'Najpierw wczytuję foldery, potem miniaturki. Nie zamykaj okna przed 100%.');
+      var bar = document.createElement('progress');
+      bar.max = 100; bar.value = 0; bar.className = 'assets-scan-progress';
+      bar.setAttribute('aria-label', 'Postęp wczytywania miniaturek');
+      content.appendChild(bar);
+      label('Wczytuję strukturę folderów… Nie zamykaj jeszcze okna.');
       send('catalog-start', {id: id});
-      var batch = [];
-      async function walk(dir, path) {
-        for await (var handle of dir.values()) {
+      var files = [], folders = 0, batch = [];
+      async function entries(dir) {
+        var result = [];
+        for await (var handle of dir.values()) result.push(handle);
+        return result;
+      }
+      async function walk(path, children) {
+        var subfolders = children.filter(function (h) { return h.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN)$/i.test(h.name); })
+          .sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
+        var readable = [];
+        // Show all siblings before scanning any of their contents.
+        for (var handle of subfolders) {
           if (generation !== scanning) return;
+          try { await handle.values().next(); }
+          catch (_) { continue; }
           var parts = path.concat(handle.name);
-          if (handle.kind === 'directory') { send('catalog-folder', {id: id, path: parts}); await walk(handle, parts); continue; }
-          if (!supported.test(handle.name)) continue;
-          try {
-            var file = await handle.getFile();
-            var preview = await imagePreview(file);
-            batch.push({id: lib.id + ':' + JSON.stringify(parts), libraryId: lib.id, path: parts,
-              name: file.name, size: file.size, modified: file.lastModified,
-              format: (file.name.split('.').pop() || '').toUpperCase(), width: preview.width || null,
-              height: preview.height || null, preview: preview.preview || null});
-            if (batch.length >= 12) { send('catalog-items', {id: id, items: batch}); batch = []; }
-          } catch (_) { /* A removed file will disappear on the next scan. */ }
+          send('catalog-folder', {id: id, path: parts});
+          readable.push({handle:handle, path:parts});
+          folders++;
+          if (folders % 15 === 0) {
+            label('Znaleziono folderów: ' + folders + '. Wczytuję dalszą strukturę…');
+            send('catalog-progress', {id:id, phase:'folders', folders:folders});
+          }
+        }
+        children.forEach(function (handle) {
+          if (handle.kind === 'file' && supported.test(handle.name)) files.push({handle:handle, path:path.concat(handle.name)});
+        });
+        for (var child of readable) {
+          if (generation !== scanning) return;
+          try { await walk(child.path, await entries(child.handle)); }
+          catch (_) { /* An inaccessible subfolder must not stop the library scan. */ }
         }
       }
-      await walk(lib.handle, []);
+      await walk([], await entries(lib.handle));
       if (generation !== scanning) return;
+      send('catalog-progress', {id:id, phase:'folders', folders:folders});
+      var total = files.length, lastPercent = -1;
+      function progress(done) {
+        var percent = total ? Math.round(done * 100 / total) : 100;
+        bar.value = percent;
+        if (percent !== lastPercent || done === total) {
+          lastPercent = percent;
+          label('Miniaturki: ' + done + '/' + total + ' (' + percent + '%). ' + (percent === 100 ? 'Możesz zamknąć okno.' : 'Nie zamykaj jeszcze okna.'));
+          send('catalog-progress', {id:id, phase:'previews', done:done, total:total, percent:percent});
+        }
+      }
+      progress(0);
+      for (var index = 0; index < total; index++) {
+        if (generation !== scanning) return;
+        var entry = files[index];
+        try {
+          var file = await entry.handle.getFile();
+          var preview = await imagePreview(file);
+          batch.push({id: lib.id + ':' + JSON.stringify(entry.path), libraryId: lib.id, path: entry.path,
+            name: file.name, size: file.size, modified: file.lastModified,
+            format: (file.name.split('.').pop() || '').toUpperCase(), width: preview.width || null,
+            height: preview.height || null, preview: preview.preview || null});
+          if (batch.length >= 12) { send('catalog-items', {id: id, items: batch}); batch = []; }
+        } catch (_) { /* A removed file will disappear on the next scan. */ }
+        progress(index + 1);
+      }
       if (batch.length) send('catalog-items', {id: id, items: batch});
       send('catalog-complete', {id: id});
-      window.setTimeout(function () { if (generation === scanning && !busy && !saving) window.close(); }, 300);
+      content.appendChild(button('Zamknij okno', function () { window.close(); }));
+      window.setTimeout(function () { if (generation === scanning && !busy && !saving) window.close(); }, 2500);
     } catch (e) {
       send('catalog-error', {id: id, reason: 'Nie udało się odczytać folderu. Sprawdź dysk i dostęp.'});
       error(e);
