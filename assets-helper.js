@@ -174,6 +174,14 @@
     return new Promise(async function (resolve) {
       var bitmap, image, url;
       try {
+        if (/\.(psd|psb)$/i.test(file.name)) {
+          var header = new DataView(await file.slice(0, 26).arrayBuffer());
+          if (header.byteLength >= 26 && header.getUint32(0, false) === 0x38425053 &&
+              (header.getUint16(4, false) === 1 || header.getUint16(4, false) === 2)) {
+            resolve({width: header.getUint32(18, false), height: header.getUint32(14, false)});
+          } else resolve({});
+          return;
+        }
         if (!/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(file.name)) { resolve({}); return; }
         var width, height, canvas = document.createElement('canvas');
         if (/\.svg$/i.test(file.name)) {
