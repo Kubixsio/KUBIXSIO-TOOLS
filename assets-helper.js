@@ -4,7 +4,7 @@
   var title = document.getElementById('helperTitle');
   var content = document.getElementById('helperContent');
   var status = document.getElementById('helperStatus');
-  var db, pending = null, busy = false;
+  var db, pending = null, busy = false, scanning = 0, saving = null;
 
   function label(text, error) { status.textContent = text || ''; status.className = 'assets-message' + (error ? ' error' : ''); }
   function node(tag, text, className) { var el = document.createElement(tag); el.textContent = text; if (className) el.className = className; return el; }
@@ -169,6 +169,146 @@
     for (var i = 0; i < path.length - 1; i++) directory = await directory.getDirectoryHandle(path[i]);
     return directory.getFileHandle(path[path.length - 1]);
   }
+  var supported = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg|psd|psb|avif|heic|heif|pdf|ai|eps|tga|dds)$/i;
+  function imagePreview(file) {
+    return new Promise(async function (resolve) {
+      var bitmap, image, url;
+      try {
+        if (!/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(file.name)) { resolve({}); return; }
+        var width, height, canvas = document.createElement('canvas');
+        if (/\.svg$/i.test(file.name)) {
+          url = URL.createObjectURL(file);
+          image = new Image();
+          await new Promise(function (done, fail) { image.onload = done; image.onerror = fail; image.src = url; });
+          width = image.naturalWidth; height = image.naturalHeight;
+        } else {
+          bitmap = await createImageBitmap(file);
+          width = bitmap.width; height = bitmap.height;
+        }
+        if (!width || !height) throw new Error('Brak wymiarów obrazu');
+        var scale = Math.min(1, 480 / Math.max(width, height));
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        canvas.getContext('2d').drawImage(bitmap || image, 0, 0, canvas.width, canvas.height);
+        resolve({width: width, height: height, preview: canvas.toDataURL('image/webp', 0.78)});
+      } catch (_) { resolve({}); }
+      finally { if (bitmap) bitmap.close(); if (url) URL.revokeObjectURL(url); }
+    });
+  }
+  async function browse(id) {
+    var generation = ++scanning;
+    try {
+      var lib = await chosenLibrary(id);
+      await put('settings', {key: 'lastLibrary', value: id});
+      await sync();
+      var state = await available(lib);
+      if (state !== 'ready') {
+        screen(state === 'permission' ? 'PRZYWRÓĆ DOSTĘP' : 'FOLDER NIEDOSTĘPNY');
+        libraryCard(lib, state === 'permission' ? 'Kliknij, aby przywrócić dostęp do biblioteki.' : 'Podłącz dysk lub pendrive i spróbuj ponownie.');
+        send('catalog-error', {id: id, reason: state === 'permission' ? 'Biblioteka wymaga ponownej zgody na odczyt.' : 'Folder niedostępny.'});
+        if (state === 'permission') content.appendChild(button('Przywróć dostęp', async function () {
+          try { await permission(lib); await browse(id); } catch (e) { error(e); }
+        }));
+        else content.appendChild(button('Spróbuj ponownie', function () { browse(id); }));
+        return;
+      }
+      screen('ODCZYTUJĘ ASSETY');
+      libraryCard(lib, 'Assety pojawią się w panelu Photopea. Możesz wrócić do panelu.');
+      send('catalog-start', {id: id});
+      var batch = [];
+      async function walk(dir, path) {
+        for await (var handle of dir.values()) {
+          if (generation !== scanning) return;
+          var parts = path.concat(handle.name);
+          if (handle.kind === 'directory') { await walk(handle, parts); continue; }
+          if (!supported.test(handle.name)) continue;
+          try {
+            var file = await handle.getFile();
+            var preview = await imagePreview(file);
+            batch.push({id: lib.id + ':' + JSON.stringify(parts), libraryId: lib.id, path: parts,
+              name: file.name, size: file.size, modified: file.lastModified,
+              format: (file.name.split('.').pop() || '').toUpperCase(), width: preview.width || null,
+              height: preview.height || null, preview: preview.preview || null});
+            if (batch.length >= 12) { send('catalog-items', {id: id, items: batch}); batch = []; }
+          } catch (_) { /* A removed file will disappear on the next scan. */ }
+        }
+      }
+      await walk(lib.handle, []);
+      if (generation !== scanning) return;
+      if (batch.length) send('catalog-items', {id: id, items: batch});
+      send('catalog-complete', {id: id});
+      window.setTimeout(function () { if (generation === scanning && !busy && !saving) window.close(); }, 300);
+    } catch (e) {
+      send('catalog-error', {id: id, reason: 'Nie udało się odczytać folderu. Sprawdź dysk i dostęp.'});
+      error(e);
+      await sync();
+    }
+  }
+  async function usePath(id, path) {
+    try {
+      var lib = await chosenLibrary(id);
+      var item = await get('files', id + ':' + JSON.stringify(path));
+      var cached = item && item.favorite ? await get('cache', item.id) : null;
+      var state = await available(lib);
+      if (state !== 'ready') {
+        if (cached) { await deliverCached(item, cached); return; }
+        screen(state === 'permission' ? 'PRZYWRÓĆ DOSTĘP' : 'FOLDER NIEDOSTĘPNY');
+        libraryCard(lib, path.join(' / '));
+        if (state === 'permission') content.appendChild(button('Przywróć dostęp i wstaw', async function () {
+          try { await permission(lib); await usePath(id, path); } catch (e) { error(e); }
+        }));
+        else label('Podłącz dysk i spróbuj ponownie.', true);
+        return;
+      }
+      var result;
+      try { result = await deliver(lib, await fileFromPath(lib, path), path, true); }
+      catch (e) { result = e; }
+      if (result && cached) await deliverCached(item, cached);
+      else if (result) error(result);
+    } catch (e) { error(e); }
+  }
+  async function saveLayer(id, filename) {
+    try {
+      var lib = await chosenLibrary(id);
+      if (!/^[^\\/:*?"<>|\x00-\x1f]+\.png$/i.test(filename) || /[. ]\.png$/i.test(filename)) throw new Error('Podaj poprawną nazwę pliku PNG.');
+      screen('ZAPISZ DO ASSETS');
+      libraryCard(lib, filename);
+      if ((await available(lib)) === 'unavailable') throw new Error('Folder jest niedostępny. Podłącz dysk i spróbuj ponownie.');
+      async function continueSave() {
+        try {
+          if ((await lib.handle.queryPermission({mode: 'readwrite'})) !== 'granted') {
+            var granted = await lib.handle.requestPermission({mode: 'readwrite'});
+            if (granted !== 'granted') throw new Error('Brak zgody na zapis w tym folderze.');
+          }
+          try { await lib.handle.getFileHandle(filename); throw new Error('Plik o tej nazwie już istnieje. Podaj inną nazwę w panelu.'); }
+          catch (e) { if (e.name !== 'NotFoundError') throw e; }
+          saving = {id: id, name: filename, library: lib};
+          label('Eksportuję zaznaczoną warstwę z Photopea…');
+          send('write-ready', {id: id, name: filename});
+        } catch (e) { error(e); }
+      }
+      if ((await lib.handle.queryPermission({mode: 'readwrite'})) === 'granted') await continueSave();
+      else content.appendChild(button('Zezwól na zapis w tej bibliotece', continueSave));
+    } catch (e) { error(e); }
+  }
+  async function writeLayer(buffer) {
+    if (!saving) return;
+    var job = saving;
+    try {
+      if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 8) throw new Error('Photopea nie zwróciła poprawnego PNG.');
+      var signature = new Uint8Array(buffer, 0, 8);
+      if ([137,80,78,71,13,10,26,10].some(function (x, i) { return signature[i] !== x; })) throw new Error('Photopea nie zwróciła pliku PNG.');
+      var handle = await job.library.handle.getFileHandle(job.name, {create: true});
+      var stream = await handle.createWritable();
+      try { await stream.write(buffer); await stream.close(); }
+      catch (e) { try { await stream.abort(); } catch (_) {} throw e; }
+      await sync();
+      send('write-complete', {id: job.id, name: job.name});
+      saving = null;
+      label('Zapisano warstwę jako ' + job.name + '.');
+      await browse(job.id);
+    } catch (e) { saving = null; error(e); }
+  }
   async function use(id) {
     try {
       var item = await get('files', id);
@@ -263,8 +403,12 @@
       }));
     } catch (e) { error(e); }
   }
-  async function setFavorites(values) {
+  async function setFavorites(values, entries) {
     try {
+      for (var entry of entries || []) {
+        if (values && values[entry.id] && !await get('files', entry.id) && await get('libraries', entry.libraryId))
+          await put('files', {id:entry.id, libraryId:entry.libraryId, name:entry.name, path:entry.path, count:0, lastUsed:0, favorite:true});
+      }
       for (var id of Object.keys(values || {})) {
         var item = await get('files', id);
         if (item) {
@@ -297,8 +441,10 @@
   window.addEventListener('message', function (event) {
     if (event.origin !== location.origin || event.source !== window.opener || !event.data || event.data.type !== 'KT_ASSETS' || event.data.channel !== channel || !event.data.command) return;
     var command = event.data.command;
+    if (command.type === 'write-buffer') { writeLayer(command.buffer); return; }
+    if (command.type === 'write-cancel') { saving = null; label(command.reason || 'Nie udało się wyeksportować warstwy.', true); return; }
     if (command.type === 'import-result') { imported(command); return; }
-    if (command.favorites) { setFavorites(command.favorites).then(function () { dispatch(command); }); return; }
+    if (command.favorites) { setFavorites(command.favorites, command.favoriteEntries).then(function () { dispatch(command); }); return; }
     dispatch(command);
   });
   function dispatch(command) {
@@ -309,6 +455,9 @@
     else if (command.type === 'toggle') toggle(command.id);
     else if (command.type === 'remove') discard(command.id);
     else if (command.type === 'sync') window.close();
+    else if (command.type === 'browse') browse(command.id);
+    else if (command.type === 'use-path') usePath(command.id, command.path);
+    else if (command.type === 'save-layer') saveLayer(command.id, command.name);
   }
   if (!window.opener || !channel) { screen('OTWÓRZ Z PHOTOPEA'); label('Otwórz ASSETS w panelu Kubixsio Tools, a potem kliknij Dodaj folder lub Szukaj zasobów.', true); return; }
   openDatabase().then(async function (database) {
