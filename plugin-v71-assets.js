@@ -10,7 +10,9 @@
   var favorites = {};
   var expandedLibraryId = null;
   var currentLibraryId = null, catalog = [], catalogFolders = [], folderPath = [], savePath = [], saveReturnId = null;
-  var catalogComplete = false, catalogId = null, savedPlace = '';
+  var catalogComplete = false, catalogId = null, savedPlace = '', catalogProgress = '';
+  // One complete scan per library and plugin session. Do not keep large thumbnails in localStorage.
+  var catalogs = Object.create(null);
 
   try {
     var saved = JSON.parse(localStorage.getItem(CACHE_KEY));
@@ -48,6 +50,17 @@
     return el;
   }
   function library(id) { return state.libraries.find(function (item) { return item.id === id; }); }
+  function selectCatalog(id) {
+    catalogId = id;
+    var entry = catalogs[id] || (catalogs[id] = {items: [], folders: [], complete: false, progress: ''});
+    catalog = entry.items; catalogFolders = entry.folders;
+    catalogComplete = entry.complete; catalogProgress = entry.progress;
+    return entry;
+  }
+  function browseLibrary(id) {
+    if (popup && !popup.closed && command && command.type === 'browse' && command.id === id) return;
+    openHelper({type:'browse', id:id});
+  }
   function openHelper(action) {
     if ((importState || exportState && action.type !== 'save-layer') && action.type !== 'sync') { message('Poczekaj na zakończenie działania Photopea.', true); return; }
     channel = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
@@ -114,11 +127,12 @@
     byId('assetsOverview').classList.add('assets-hidden');
     byId('assetsSavePanel').classList.add('assets-hidden');
     byId('assetsLibraryView').classList.remove('assets-hidden');
-    catalogId = id; catalog = []; catalogFolders = []; catalogComplete = false;
+    selectCatalog(id);
     byId('assetsTileGrid').replaceChildren(); byId('assetsFolderList').replaceChildren();
     byId('assetsLibraryTitle').textContent = lib.name + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
-    byId('assetsCatalogState').textContent = lib.status === 'unavailable' ? 'Sprawdzam dostępność folderu…' : 'Wczytuję pliki z folderu…';
-    openHelper({type: 'browse', id: id});
+    byId('assetsCatalogState').textContent = catalogComplete ? 'Zapisana zawartość biblioteki. „Odśwież” wczyta zmiany.' : 'Wczytuję foldery…';
+    renderDirectory();
+    if (!catalogComplete) browseLibrary(id);
   }
   function showSaveForm() {
     if (importState || exportState) { message('Poczekaj na zakończenie poprzedniego działania.', true); return; }
@@ -149,10 +163,8 @@
     var lib = library(byId('assetsSaveLibrary').value);
     byId('assetsSaveFolderPath').textContent = 'Zapis do: ' + (lib ? lib.name : '') + (savePath.length ? ' / ' + savePath.join(' / ') : '');
     if (savePath.length) root.appendChild(button('← Folder wyżej', function () { savePath.pop(); renderSaveFolders(); }));
-    if (catalogId !== byId('assetsSaveLibrary').value || !catalogComplete) {
-      root.appendChild(node('p', 'assets-muted', 'Wczytuję podfoldery…'));
-      return;
-    }
+    if (catalogId !== byId('assetsSaveLibrary').value) return;
+    if (!catalogComplete) root.appendChild(node('p', 'assets-muted', catalogProgress || 'Wczytuję podfoldery…'));
     childFolders(savePath).forEach(function (parts) {
       var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { savePath = parts.slice(); renderSaveFolders(); });
       entry.className = 'assets-folder-entry'; root.appendChild(entry);
@@ -161,10 +173,7 @@
   function loadSaveFolders() {
     var id = byId('assetsSaveLibrary').value;
     savePath = id === currentLibraryId ? folderPath.slice() : [];
-    if (id && (catalogId !== id || !catalogComplete)) {
-      catalogId = id; catalog = []; catalogFolders = []; catalogComplete = false;
-      openHelper({type:'browse', id:id});
-    }
+    if (id) { selectCatalog(id); if (!catalogComplete) browseLibrary(id); }
     renderSaveFolders();
   }
   function confirmSave() {
@@ -242,7 +251,7 @@
       }));
     }
     byId('assetsCatalogState').textContent = catalogComplete ?
-      (folders.length ? 'Podfoldery: ' + folders.length : 'Assety: ' + files.length) + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : 'Wczytuję zawartość folderu…';
+      (folders.length ? 'Podfoldery: ' + folders.length : 'Assety: ' + files.length) + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : catalogProgress || 'Wczytuję foldery…';
   }
   function toggleFavorite(file) {
     file.favorite = !file.favorite;
@@ -255,7 +264,12 @@
   function refreshLocal(id) {
     var lib = library(id);
     if (!lib) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
-    message('Otwórz bibliotekę, aby ponownie sprawdzić dostępność i zmiany w plikach.');
+    if (popup && !popup.closed && command && command.type === 'browse' && command.id === id) {
+      popup.close(); popup = null; command = null; channel = '';
+    }
+    delete catalogs[id];
+    if (catalogId === id) selectCatalog(id);
+    message('Lista wyczyszczona. Przy kolejnym otwarciu biblioteka wczyta foldery ponownie.');
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
@@ -428,6 +442,7 @@
       if (data.event === 'snapshot' && data.snapshot) {
         var previous = state.files;
         state = data.snapshot;
+        Object.keys(catalogs).forEach(function (id) { if (!library(id)) delete catalogs[id]; });
         restoreFavorites(previous);
         saveState();
         render();
@@ -435,7 +450,8 @@
         if (command && command.type === 'sync') message('Biblioteki wczytane.');
       }
       if (data.event === 'catalog-start' && data.id === catalogId) {
-        catalog = []; catalogFolders = []; catalogComplete = false;
+        catalogs[data.id] = {items: [], folders: [], complete: false, progress: 'Wczytuję foldery…'};
+        selectCatalog(data.id);
         if (data.id === currentLibraryId) renderDirectory();
         if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
       }
@@ -443,18 +459,27 @@
         catalogFolders.push(data.path);
         if (data.id === currentLibraryId && data.path.length === folderPath.length + 1 && samePath(data.path.slice(0,-1), folderPath)) renderDirectory();
       }
+      if (data.event === 'catalog-progress' && data.id === catalogId) {
+        catalogProgress = data.phase === 'folders' ? 'Znaleziono folderów: ' + data.folders + ' · przeglądam strukturę…' :
+          'Miniaturki: ' + data.done + '/' + data.total + ' (' + data.percent + '%)';
+        catalogs[data.id].progress = catalogProgress;
+        if (data.id === currentLibraryId && !catalogComplete) byId('assetsCatalogState').textContent = catalogProgress;
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
+      }
       if (data.event === 'catalog-items' && data.id === catalogId && Array.isArray(data.items)) {
         catalog.push.apply(catalog, data.items);
         if (data.id === currentLibraryId && data.items.some(function (item) { return samePath(item.path.slice(0,-1), folderPath); })) renderDirectory();
       }
       if (data.event === 'catalog-complete' && data.id === catalogId) {
-        catalogComplete = true;
+        catalogComplete = true; catalogProgress = '';
+        catalogs[data.id].complete = true; catalogs[data.id].progress = '';
         if (data.id === currentLibraryId && folderPath.length && !catalogFolders.some(function (parts) { return samePath(parts, folderPath); })) folderPath = [];
         if (!byId('assetsSavePanel').classList.contains('assets-hidden') && savePath.length && !catalogFolders.some(function (parts) { return samePath(parts, savePath); })) savePath = [];
         if (data.id === currentLibraryId) renderDirectory();
         if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
       }
       if (data.event === 'catalog-error' && data.id === catalogId) {
+        delete catalogs[data.id];
         if (data.id === currentLibraryId) byId('assetsCatalogState').textContent = data.reason;
         if (!byId('assetsSavePanel').classList.contains('assets-hidden')) { byId('assetsSaveFolders').replaceChildren(node('p','assets-muted',data.reason)); }
       }
@@ -462,6 +487,7 @@
       if (data.event === 'write-complete' && exportState && data.id === exportState.libraryId && data.name === exportState.name && samePath(data.path || [], exportState.path)) {
         var savedName = exportState.name, savedPath = exportState.path.slice();
         exportState = null;
+        delete catalogs[data.id]; selectCatalog(data.id);
         currentLibraryId = data.id; folderPath = savedPath; choosePlace(data.id);
         byId('assetsSavePanel').classList.add('assets-hidden'); byId('assetsLibraryView').classList.remove('assets-hidden');
         renderDirectory();
