@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
-<link rel="stylesheet" href="plugin-v71-assets.css?v=79">
+<link rel="stylesheet" href="plugin-v71-assets.css?v=80">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -55,14 +55,30 @@
     <div id="assetsHome" class="assets-stack assets-hidden" style="margin-top:9px">
       <button type="button" id="assetsAdd">DODAJ FOLDER</button>
       <button type="button" id="assetsSearch">SZUKAJ ZASOBÓW</button>
+      <button type="button" id="assetsSave">ZAPISZ DO ASSETS</button>
     </div>
     <div id="assetsBrowser" class="assets-hidden">
       <button type="button" id="assetsBack" class="assets-back">← ASSETS</button>
-      <p class="assets-subtitle">TWOJE BIBLIOTEKI</p>
-      <div id="assetsLibraryList" class="assets-stack"></div>
-      <div id="assetsRecent"></div>
-      <div id="assetsFavorites"></div>
-      <div id="assetsFrequent"></div>
+      <div id="assetsOverview">
+        <p class="assets-subtitle">TWOJE BIBLIOTEKI</p>
+        <div id="assetsLibraryList" class="assets-stack"></div>
+        <div id="assetsRecent"></div>
+        <div id="assetsFavorites"></div>
+        <div id="assetsFrequent"></div>
+      </div>
+      <div id="assetsLibraryView" class="assets-hidden">
+        <div class="assets-view-head"><strong id="assetsLibraryTitle"></strong><button type="button" id="assetsSaveHere">ZAPISZ DO ASSETS</button></div>
+        <p id="assetsCatalogState" class="assets-muted" role="status"></p>
+        <div id="assetsTileGrid" class="assets-tile-grid"></div>
+      </div>
+      <div id="assetsSavePanel" class="assets-hidden assets-stack">
+        <p class="assets-subtitle">ZAPISZ ZAZNACZONĄ WARSTWĘ</p>
+        <label class="assets-muted" for="assetsSaveLibrary">Biblioteka</label>
+        <select id="assetsSaveLibrary" class="assets-input"></select>
+        <label class="assets-muted" for="assetsSaveName">Nazwa pliku PNG</label>
+        <input id="assetsSaveName" class="assets-input" maxlength="100" placeholder="Nazwa assetu.png">
+        <button type="button" id="assetsSaveConfirm">Zapisz warstwę</button>
+      </div>
     </div>
     <p id="assetsMessage" class="assets-message" role="status"></p>
   </div>
@@ -72,7 +88,13 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v79</div>
+  <div class="footer">KUBIXSIO TOOLS • v80</div>
+</div>
+<div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
+  <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
+</div>
+<div id="assetsInfo" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Informacje o assecie">
+  <div class="assets-preview-card"><button id="assetsInfoClose" type="button" class="assets-preview-close" aria-label="Zamknij informacje">×</button><div id="assetsInfoText" class="assets-info-text"></div></div>
 </div>
 <div id="guideLightbox" class="guide-lightbox" aria-hidden="true">
   <div id="guideStage" class="guide-stage">
@@ -83,7 +105,7 @@
 <script src="plugin-v35-core.js?v=70"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
-<script src="plugin-v71-assets.js?v=79"></script>
+<script src="plugin-v71-assets.js?v=80"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
