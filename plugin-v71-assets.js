@@ -5,7 +5,7 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
-  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v1';
+  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v2';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
@@ -28,7 +28,7 @@
   function indexDatabase() {
     if (directoryDatabase) return directoryDatabase;
     directoryDatabase = new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-directories-v1', 1);
+      var request = indexedDB.open('kubixsio-assets-directories-v2', 1);
       request.onupgradeneeded = function () { request.result.createObjectStore('directories', {keyPath:'key'}); };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error); };
@@ -62,12 +62,12 @@
   }
   function storedDirectory(key) {
     return indexAction('get', key).then(function (record) {
-      return record && record.complete === true && record.version === 1 && Array.isArray(record.path) &&
+      return record && record.complete === true && record.version === 2 && Array.isArray(record.path) &&
         Array.isArray(record.folders) && Array.isArray(record.items) ? record : null;
     });
   }
   async function persistDirectory(entry) {
-    var record = {key:entry.key, id:entry.id, path:entry.path, version:1, complete:true, folders:entry.folders, items:entry.items};
+    var record = {key:entry.key, id:entry.id, path:entry.path, version:2, complete:true, folders:entry.folders, items:entry.items};
     try { await indexAction('put', record); return true; }
     catch (_) {
       await indexAction('put', Object.assign({}, record, {items:entry.items.map(function (item) { return Object.assign({}, item, {preview:null}); })}));
@@ -484,8 +484,8 @@
     if (!importState || importState.stage !== 'opening') return;
     importState.stage = 'finishing';
     var id = JSON.stringify(importState.id), name = JSON.stringify(importState.name);
-    setStatus('ASSETS: dodaję warstwę 1:1…', 'busy');
-    postScript('try{var s=window.ktxAssetsTarget;if(!s||!s.doc)throw new Error("Zgubiono dokument docelowy");if(app.documents.length!==s.count+1)throw new Error("Zmieniono liczbę otwartych dokumentów");var target=s.doc,found=false;for(var i=0;i<app.documents.length;i++)if(app.documents[i]===target)found=true;if(!found)throw new Error("Dokument docelowy został zamknięty");var source=app.activeDocument;if(source===target)throw new Error("Nie znaleziono pliku źródłowego");var w=Number(source.width),h=Number(source.height);source.selection.selectAll();source.selection.copy(true);app.activeDocument=target;var layer=target.paste();layer.name=' + name + ';source.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=target;window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_OK|"+' + id + '+"|"+w+"x"+h)}catch(e){window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    setStatus('ASSETS: umieszczam Smart Object…', 'busy');
+    postScript('var source=null,target=null;try{var s=window.ktxAssetsTarget;if(!s||!s.doc)throw new Error("Zgubiono dokument docelowy");if(app.documents.length!==s.count+1)throw new Error("Zmieniono liczbę otwartych dokumentów");target=s.doc;var found=false;for(var i=0;i<app.documents.length;i++)if(app.documents[i]===target)found=true;if(!found)throw new Error("Dokument docelowy został zamknięty");source=app.activeDocument;if(source===target)throw new Error("Nie znaleziono pliku źródłowego");var w=Number(source.width),h=Number(source.height);if(!source.activeLayer)throw new Error("Plik nie zawiera warstwy");executeAction(stringIDToTypeID("newPlacedLayer"));var smart=source.activeLayer;var placed=smart.duplicate(target,ElementPlacement.PLACEATBEGINNING);source.close(SaveOptions.DONOTSAVECHANGES);source=null;app.activeDocument=target;if(!placed)placed=target.activeLayer;placed.name=' + name + ';function px(v){try{return v.as("px")}catch(e){}try{return v.value}catch(e){}return Number(v)}var b=placed.bounds,lw=px(b[2])-px(b[0]),lh=px(b[3])-px(b[1]),dw=px(target.width),dh=px(target.height);if(lw>0&&lh>0&&dw>0&&dh>0){var scale=Math.min(100,(dw/lw)*100,(dh/lh)*100);if(scale<99.999)placed.resize(scale,scale,AnchorPosition.MIDDLECENTER);b=placed.bounds;var cx=(px(b[0])+px(b[2]))/2,cy=(px(b[1])+px(b[3]))/2;placed.translate(dw/2-cx,dh/2-cy)}target.activeLayer=placed;window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_OK|"+' + id + '+"|"+w+"x"+h)}catch(e){try{if(source&&source!==target)source.close(SaveOptions.DONOTSAVECHANGES)}catch(_){}try{if(target)app.activeDocument=target}catch(_){}window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
   }
   function exportSelectedLayer(id) {
     var source = null, temporary = null;
@@ -506,13 +506,21 @@
       // Remove only the exact empty layer created with the temporary document.
       if (starter && temporary.layers.length > 1) try { starter.remove(); } catch (_) {}
       try { temporary.trim(TrimType.TRANSPARENT, true, true, true, true); } catch (_) {}
-      temporary.saveToOE('png');
+      app.echoToOE('KTX_ASSET_PREPARED|' + id);
     } catch (e) {
       window.ktxAssetsExport = null;
       if (temporary) try { temporary.close(SaveOptions.DONOTSAVECHANGES); } catch (_) {}
       if (source) try { app.activeDocument = source; } catch (_) {}
       app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString());
     }
+  }
+  function savePreparedLayer(id) {
+    try {
+      var job = window.ktxAssetsExport;
+      if (!job || job.id !== id || !job.temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      app.activeDocument = job.temporary;
+      job.temporary.saveToOE('png');
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
   }
   function closePreparedLayer(id) {
     try {
@@ -527,9 +535,19 @@
   }
   function startExport(data) {
     if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name || !samePath(exportState.path, data.path || [])) return;
-    exportState.stage = 'saving'; exportState.done = false; exportState.buffer = null;
-    setStatus('ASSETS: eksportuję zaznaczoną warstwę…', 'busy');
+    exportState.stage = 'preparing'; exportState.preparedAck = false; exportState.prepareDone = false; exportState.buffer = null;
+    setStatus('ASSETS: przygotowuję zaznaczoną warstwę…', 'busy');
     postScript('(' + exportSelectedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    exportState.timer = setTimeout(function () {
+      if (exportState && exportState.stage === 'preparing') failExport('Photopea nie przygotowała zaznaczonej warstwy.');
+    }, 15000);
+  }
+  function startPreparedSave() {
+    if (!exportState || exportState.stage !== 'preparing' || !exportState.preparedAck || !exportState.prepareDone) return;
+    if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.stage = 'saving'; exportState.done = false; exportState.buffer = null; exportState.timer = null;
+    setStatus('ASSETS: eksportuję PNG zaznaczonej warstwy…', 'busy');
+    postScript('(' + savePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
   }
   function finishExport() {
     if (!exportState || exportState.stage !== 'saving' || !exportState.buffer || !exportState.done) return;
@@ -551,7 +569,7 @@
     var failed = exportState;
     if (failed.timer) clearTimeout(failed.timer);
     exportState = null;
-    if (failed.stage === 'saving' || failed.stage === 'cleaning')
+    if (failed.stage === 'preparing' || failed.stage === 'saving' || failed.stage === 'cleaning')
       postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(failed.id) + ');');
     setStatus('ASSETS: ' + reason, 'err');
     message(reason, true);
@@ -617,14 +635,22 @@
       return;
     }
     if (exportState && event.source === window.parent) {
-      if (event.data instanceof ArrayBuffer && exportState.stage === 'saving') {
-        exportState.buffer = event.data; finishExport(); return;
+      var returnedBuffer = event.data instanceof ArrayBuffer ? event.data :
+        ArrayBuffer.isView && ArrayBuffer.isView(event.data) ? event.data.buffer.slice(event.data.byteOffset, event.data.byteOffset + event.data.byteLength) : null;
+      if (returnedBuffer && exportState.stage === 'saving') {
+        exportState.buffer = returnedBuffer; finishExport(); return;
       }
       if (typeof event.data === 'string') {
         var err = 'KTX_ASSET_EXPORT_ERR|' + exportState.id + '|';
         if (event.data.indexOf(err) === 0) { failExport(event.data.substring(err.length)); return; }
+        if (event.data === 'KTX_ASSET_PREPARED|' + exportState.id && exportState.stage === 'preparing') {
+          exportState.preparedAck = true; startPreparedSave(); return;
+        }
         if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') {
           exportState.ack = true; finishCleanup(); return;
+        }
+        if (event.data === 'done' && exportState.stage === 'preparing') {
+          exportState.prepareDone = true; startPreparedSave(); return;
         }
         if (event.data === 'done' && exportState.stage === 'saving') {
           exportState.done = true;
@@ -657,7 +683,7 @@
       else if (importState.stage === 'complete') {
         var success = importState;
         importState = null;
-        setStatus('Dodano ' + success.name + ' (' + success.dims + ', 1:1)', '');
+        setStatus('Dodano ' + success.name + ' jako Smart Object (' + success.dims + ').', '');
         sendToHelper({type: 'import-result', ok: true});
       } else if (importState.stage === 'error') fail(importState.reason);
       return;

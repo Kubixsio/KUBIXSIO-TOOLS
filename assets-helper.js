@@ -85,29 +85,51 @@
   function add() {
     screen('DODAJ FOLDER');
     content.appendChild(node('p', 'Wybierz folder na dysku lub pendrivie. Dostęp jest tylko do odczytu.', 'assets-muted'));
-    content.appendChild(node('p', 'Folder ukryty (np. AppData / Modrinth): w oknie Windows kliknij pasek adresu albo użyj Ctrl+L, wklej pełną ścieżkę do folderu Screenshots i wybierz dokładnie ten folder.', 'assets-muted'));
+    content.appendChild(node('p', 'Folder ukryty (np. AppData / Modrinth): jeżeli Edge odrzuca go jako systemowy, przeciągnij dokładnie folder Screenshots z Eksploratora na pole poniżej.', 'assets-muted'));
+    async function nameFolder(handle) {
+      screen('NAZWIJ BIBLIOTEKĘ');
+      content.appendChild(node('div', '📁 ' + handle.name, 'assets-title'));
+      content.appendChild(node('p', 'To jest najdokładniejsza lokalizacja udostępniana stronie. Edge ze względów bezpieczeństwa ukrywa pełny adres typu C:\\…', 'assets-muted'));
+      var input = document.createElement('input');
+      input.className = 'assets-input'; input.value = handle.name; input.maxLength = 60;
+      input.setAttribute('aria-label', 'Nazwa biblioteki');
+      content.appendChild(input);
+      content.appendChild(button('Zapisz bibliotekę', async function () {
+        var name = input.value.trim();
+        if (!name) { label('Podaj nazwę biblioteki.', true); return; }
+        try {
+          await put('libraries', {id: crypto.randomUUID(), name: name, enabled: true, handle: handle});
+          await sync();
+          screen('FOLDER DODANY');
+          content.appendChild(node('p', 'Biblioteka „' + name + '” została zapisana. Możesz zamknąć to okno.', 'assets-muted'));
+        } catch (e) { error(e); }
+      }));
+      input.focus(); input.select();
+    }
     content.appendChild(button('Wybierz folder', async function () {
       if (!window.showDirectoryPicker) { error(new Error('Ta przeglądarka nie obsługuje trwałego dostępu do folderów. Użyj Edge lub Chrome na komputerze.')); return; }
       try {
         var handle = await window.showDirectoryPicker({mode: 'read', id:'kubixsio-add-library'});
-        screen('NAZWIJ BIBLIOTEKĘ');
-        var input = document.createElement('input');
-        input.className = 'assets-input'; input.value = handle.name; input.maxLength = 60;
-        input.setAttribute('aria-label', 'Nazwa biblioteki');
-        content.appendChild(input);
-        content.appendChild(button('Zapisz bibliotekę', async function () {
-          var name = input.value.trim();
-          if (!name) { label('Podaj nazwę biblioteki.', true); return; }
-          try {
-            await put('libraries', {id: crypto.randomUUID(), name: name, enabled: true, handle: handle});
-            await sync();
-            screen('FOLDER DODANY');
-            content.appendChild(node('p', 'Biblioteka „' + name + '” została zapisana. Możesz zamknąć to okno.', 'assets-muted'));
-          } catch (e) { error(e); }
-        }));
-        input.focus();input.select();
-      } catch (e) { error(e); }
+        await nameFolder(handle);
+      } catch (e) {
+        if (e && e.name === 'AbortError') label('Wybór anulowano albo Edge zablokował folder jako systemowy. Takiej blokady plugin nie może ominąć.', true);
+        else error(e);
+      }
     }));
+    var drop = node('div', 'PRZECIĄGNIJ FOLDER SCREENSHOTS TUTAJ', 'assets-folder-drop');
+    drop.addEventListener('dragover', function (event) { event.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+    drop.addEventListener('drop', async function (event) {
+      event.preventDefault(); drop.classList.remove('over');
+      try {
+        var item = event.dataTransfer && event.dataTransfer.items && event.dataTransfer.items[0];
+        if (!item || typeof item.getAsFileSystemHandle !== 'function') throw new Error('Edge nie udostępnił przeciągniętego folderu. Użyj najnowszej wersji Edge.');
+        var handle = await item.getAsFileSystemHandle();
+        if (!handle || handle.kind !== 'directory') throw new Error('Przeciągnij folder, a nie pojedynczy plik.');
+        await nameFolder(handle);
+      } catch (e) { error(e); }
+    });
+    content.appendChild(drop);
   }
   async function deliver(lib, handle, path, silent) {
     if (busy) return;
@@ -242,9 +264,21 @@
       var directory = await directoryFromPath(lib, path), children = [];
       for await (var handle of directory.values()) children.push(handle);
       if (generation !== scanning) return;
-      var folders = children.filter(function (handle) {
+      var folderHandles = children.filter(function (handle) {
         return handle.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN)$/i.test(handle.name);
-      }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); }).map(function (handle) { return path.concat(handle.name); });
+      }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
+      var folders = [];
+      for (var folderIndex = 0; folderIndex < folderHandles.length; folderIndex++) {
+        if (generation !== scanning) return;
+        var folderHandle = folderHandles[folderIndex], useful = false;
+        label('Sprawdzam foldery: ' + (folderIndex + 1) + '/' + folderHandles.length + '…');
+        try {
+          for await (var child of folderHandle.values()) {
+            if (child.kind === 'directory' || child.kind === 'file' && supported.test(child.name)) { useful = true; break; }
+          }
+        } catch (_) { useful = true; }
+        if (useful) folders.push(path.concat(folderHandle.name));
+      }
       // Navigation stays light: when there are subfolders, do not generate any
       // thumbnails yet. Assets are read only after entering a leaf directory.
       var files = folders.length ? [] : children.filter(function (handle) {
@@ -476,7 +510,7 @@
       await put('settings', {key: 'lastLibrary', value: pending.libraryId});
       pending = null;
       await sync();
-      label('Asset dodany do Photopea w oryginalnym rozmiarze.');
+      label('Asset dodany do Photopea. Obrazy są wstawiane jako Smart Object i automatycznie dopasowywane.');
       setTimeout(function () { window.close(); }, 800);
     } catch (e) { error(e); }
   }
@@ -490,9 +524,7 @@
         scanFinished.completed = true;
         scanFinished.bar.value = 100;
         label(command.previewsSaved ? '100% — folder zapisany w cache. Możesz zamknąć okno.' : '100% — zapisano nazwy; zabrakło miejsca na miniaturki. Możesz zamknąć okno.', !command.previewsSaved);
-        content.appendChild(button('Zamknij okno', function () { window.close(); }));
-        var finished = scanFinished.scan;
-        window.setTimeout(function () { if (finished === scanning && !busy && !saving) window.close(); }, 2500);
+        window.close();
       } else {
         label('Nie udało się zapisać folderu: ' + (command.reason || 'sprawdź miejsce w przeglądarce') + '. Ponów zapis przed zamknięciem.', true);
         content.appendChild(button('Ponów zapis folderu', function () { send('directory-save-retry', {id:command.id, path:command.path || [], scan:command.scan}); }));
