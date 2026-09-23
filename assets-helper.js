@@ -4,7 +4,7 @@
   var title = document.getElementById('helperTitle');
   var content = document.getElementById('helperContent');
   var status = document.getElementById('helperStatus');
-  var db, pending = null, busy = false, scanning = 0, saving = null;
+  var db, pending = null, busy = false, scanning = 0, saving = null, scanFinished = null;
 
   function label(text, error) { status.textContent = text || ''; status.className = 'assets-message' + (error ? ' error' : ''); }
   function node(tag, text, className) { var el = document.createElement(tag); el.textContent = text; if (className) el.className = className; return el; }
@@ -85,10 +85,11 @@
   function add() {
     screen('DODAJ FOLDER');
     content.appendChild(node('p', 'Wybierz folder na dysku lub pendrivie. Dostęp jest tylko do odczytu.', 'assets-muted'));
+    content.appendChild(node('p', 'Folder ukryty (np. AppData / Modrinth): w oknie Windows kliknij pasek adresu albo użyj Ctrl+L, wklej pełną ścieżkę do folderu Screenshots i wybierz dokładnie ten folder.', 'assets-muted'));
     content.appendChild(button('Wybierz folder', async function () {
       if (!window.showDirectoryPicker) { error(new Error('Ta przeglądarka nie obsługuje trwałego dostępu do folderów. Użyj Edge lub Chrome na komputerze.')); return; }
       try {
-        var handle = await window.showDirectoryPicker({mode: 'read'});
+        var handle = await window.showDirectoryPicker({mode: 'read', id:'kubixsio-add-library'});
         screen('NAZWIJ BIBLIOTEKĘ');
         var input = document.createElement('input');
         input.className = 'assets-input'; input.value = handle.name; input.maxLength = 60;
@@ -203,9 +204,18 @@
       finally { if (bitmap) bitmap.close(); if (url) URL.revokeObjectURL(url); }
     });
   }
-  async function browse(id) {
+  async function directoryFromPath(lib, path) {
+    var directory = lib.handle;
+    for (var i = 0; i < path.length; i++) directory = await directory.getDirectoryHandle(path[i]);
+    return directory;
+  }
+  async function browsePath(id, path) {
+    path = Array.isArray(path) ? path.slice() : [];
     var generation = ++scanning;
+    scanFinished = null;
     try {
+      if (path.some(function (part) { return typeof part !== 'string' || !part || part === '.' || part === '..' || /[\\/]/.test(part); }))
+        throw new Error('Niepoprawna ścieżka folderu.');
       var lib = await chosenLibrary(id);
       await put('settings', {key: 'lastLibrary', value: id});
       await sync();
@@ -213,88 +223,60 @@
       if (state !== 'ready') {
         screen(state === 'permission' ? 'PRZYWRÓĆ DOSTĘP' : 'FOLDER NIEDOSTĘPNY');
         libraryCard(lib, state === 'permission' ? 'Kliknij, aby przywrócić dostęp do biblioteki.' : 'Podłącz dysk lub pendrive i spróbuj ponownie.');
-        send('catalog-error', {id: id, reason: state === 'permission' ? 'Biblioteka wymaga ponownej zgody na odczyt.' : 'Folder niedostępny.'});
+        send('directory-error', {id:id, path:path, reason:state === 'permission' ? 'Biblioteka wymaga ponownej zgody na odczyt.' : 'Folder niedostępny.'});
         if (state === 'permission') content.appendChild(button('Przywróć dostęp', async function () {
-          try { await permission(lib); await browse(id); } catch (e) { error(e); }
+          try { await permission(lib); await browsePath(id, path); } catch (e) { error(e); }
         }));
-        else content.appendChild(button('Spróbuj ponownie', function () { browse(id); }));
+        else content.appendChild(button('Spróbuj ponownie', function () { browsePath(id, path); }));
         return;
       }
-      screen('ODCZYTUJĘ ASSETY');
-      libraryCard(lib, 'Najpierw wczytuję foldery, potem miniaturki. Nie zamykaj okna przed 100%.');
+      screen('ODCZYTUJĘ FOLDER');
+      libraryCard(lib, (path.length ? path.join(' / ') : 'Folder główny') + ' — wczytuję tylko ten poziom.');
       var bar = document.createElement('progress');
       bar.max = 100; bar.value = 0; bar.className = 'assets-scan-progress';
-      bar.setAttribute('aria-label', 'Postęp wczytywania miniaturek');
+      bar.setAttribute('aria-label', 'Postęp wczytywania folderu');
       content.appendChild(bar);
-      label('Wczytuję strukturę folderów… Nie zamykaj jeszcze okna.');
-      send('catalog-start', {id: id});
-      var files = [], folders = 0, batch = [];
-      async function entries(dir) {
-        var result = [];
-        for await (var handle of dir.values()) result.push(handle);
-        return result;
-      }
-      async function walk(path, children) {
-        var subfolders = children.filter(function (h) { return h.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN)$/i.test(h.name); })
-          .sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
-        var readable = [];
-        // Show all siblings before scanning any of their contents.
-        for (var handle of subfolders) {
-          if (generation !== scanning) return;
-          try { await handle.values().next(); }
-          catch (_) { continue; }
-          var parts = path.concat(handle.name);
-          send('catalog-folder', {id: id, path: parts});
-          readable.push({handle:handle, path:parts});
-          folders++;
-          if (folders % 15 === 0) {
-            label('Znaleziono folderów: ' + folders + '. Wczytuję dalszą strukturę…');
-            send('catalog-progress', {id:id, phase:'folders', folders:folders});
-          }
-        }
-        children.forEach(function (handle) {
-          if (handle.kind === 'file' && supported.test(handle.name)) files.push({handle:handle, path:path.concat(handle.name)});
-        });
-        for (var child of readable) {
-          if (generation !== scanning) return;
-          try { await walk(child.path, await entries(child.handle)); }
-          catch (_) { /* An inaccessible subfolder must not stop the library scan. */ }
-        }
-      }
-      await walk([], await entries(lib.handle));
+      label('Wczytuję zawartość tego folderu…');
+      send('directory-start', {id:id, path:path});
+
+      var directory = await directoryFromPath(lib, path), children = [];
+      for await (var handle of directory.values()) children.push(handle);
       if (generation !== scanning) return;
-      send('catalog-progress', {id:id, phase:'folders', folders:folders});
-      var total = files.length, lastPercent = -1;
+      var folders = children.filter(function (handle) {
+        return handle.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN)$/i.test(handle.name);
+      }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); }).map(function (handle) { return path.concat(handle.name); });
+      // Navigation stays light: when there are subfolders, do not generate any
+      // thumbnails yet. Assets are read only after entering a leaf directory.
+      var files = folders.length ? [] : children.filter(function (handle) {
+        return handle.kind === 'file' && supported.test(handle.name);
+      }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
+      var items = [], total = files.length, lastPercent = -1;
       function progress(done) {
-        var percent = total ? Math.round(done * 100 / total) : 100;
+        var percent = total ? Math.round(done * 99 / total) : 99;
         bar.value = percent;
         if (percent !== lastPercent || done === total) {
           lastPercent = percent;
-          label('Miniaturki: ' + done + '/' + total + ' (' + percent + '%). ' + (percent === 100 ? 'Możesz zamknąć okno.' : 'Nie zamykaj jeszcze okna.'));
-          send('catalog-progress', {id:id, phase:'previews', done:done, total:total, percent:percent});
+          label(done === total ? 'Folder gotowy. Zapisuję go w cache…' : 'Miniaturki: ' + done + '/' + total + ' (' + percent + '%).');
+          send('directory-progress', {id:id, path:path, done:done, total:total, percent:percent});
         }
       }
       progress(0);
       for (var index = 0; index < total; index++) {
         if (generation !== scanning) return;
-        var entry = files[index];
         try {
-          var file = await entry.handle.getFile();
+          var file = await files[index].getFile(), filePath = path.concat(files[index].name);
           var preview = await imagePreview(file);
-          batch.push({id: lib.id + ':' + JSON.stringify(entry.path), libraryId: lib.id, path: entry.path,
-            name: file.name, size: file.size, modified: file.lastModified,
-            format: (file.name.split('.').pop() || '').toUpperCase(), width: preview.width || null,
-            height: preview.height || null, preview: preview.preview || null});
-          if (batch.length >= 12) { send('catalog-items', {id: id, items: batch}); batch = []; }
-        } catch (_) { /* A removed file will disappear on the next scan. */ }
+          items.push({id:lib.id + ':' + JSON.stringify(filePath), libraryId:lib.id, path:filePath,
+            name:file.name, size:file.size, modified:file.lastModified,
+            format:(file.name.split('.').pop() || '').toUpperCase(), width:preview.width || null,
+            height:preview.height || null, preview:preview.preview || null});
+        } catch (_) { /* A removed file will disappear from this directory result. */ }
         progress(index + 1);
       }
-      if (batch.length) send('catalog-items', {id: id, items: batch});
-      send('catalog-complete', {id: id});
-      content.appendChild(button('Zamknij okno', function () { window.close(); }));
-      window.setTimeout(function () { if (generation === scanning && !busy && !saving) window.close(); }, 2500);
+      scanFinished = {id:id, path:path, scan:generation, bar:bar};
+      send('directory-complete', {id:id, path:path, folders:folders, items:items, scan:generation});
     } catch (e) {
-      send('catalog-error', {id: id, reason: 'Nie udało się odczytać folderu. Sprawdź dysk i dostęp.'});
+      send('directory-error', {id:id, path:path, reason:'Nie udało się odczytać tego folderu. Sprawdź dysk i dostęp.'});
       error(e);
       await sync();
     }
@@ -365,7 +347,8 @@
       send('write-complete', {id: job.id, name: job.name, path: job.path});
       saving = null;
       label('Zapisano warstwę jako ' + job.name + '.');
-      await browse(job.id);
+      // Refresh only the destination directory, never the whole library.
+      await browsePath(job.id, job.path);
     } catch (e) { saving = null; error(e); }
   }
   async function use(id) {
@@ -500,6 +483,22 @@
   window.addEventListener('message', function (event) {
     if (event.origin !== location.origin || event.source !== window.opener || !event.data || event.data.type !== 'KT_ASSETS' || event.data.channel !== channel || !event.data.command) return;
     var command = event.data.command;
+    if (command.type === 'directory-saved' && scanFinished && scanFinished.id === command.id &&
+        JSON.stringify(scanFinished.path) === JSON.stringify(command.path || []) && scanFinished.scan === command.scan) {
+      if (command.ok) {
+        if (scanFinished.completed) return;
+        scanFinished.completed = true;
+        scanFinished.bar.value = 100;
+        label(command.previewsSaved ? '100% — folder zapisany w cache. Możesz zamknąć okno.' : '100% — zapisano nazwy; zabrakło miejsca na miniaturki. Możesz zamknąć okno.', !command.previewsSaved);
+        content.appendChild(button('Zamknij okno', function () { window.close(); }));
+        var finished = scanFinished.scan;
+        window.setTimeout(function () { if (finished === scanning && !busy && !saving) window.close(); }, 2500);
+      } else {
+        label('Nie udało się zapisać folderu: ' + (command.reason || 'sprawdź miejsce w przeglądarce') + '. Ponów zapis przed zamknięciem.', true);
+        content.appendChild(button('Ponów zapis folderu', function () { send('directory-save-retry', {id:command.id, path:command.path || [], scan:command.scan}); }));
+      }
+      return;
+    }
     if (command.type === 'write-buffer') { writeLayer(command.buffer); return; }
     if (command.type === 'write-cancel') { saving = null; label(command.reason || 'Nie udało się wyeksportować warstwy.', true); return; }
     if (command.type === 'import-result') { imported(command); return; }
@@ -514,7 +513,7 @@
     else if (command.type === 'toggle') toggle(command.id);
     else if (command.type === 'remove') discard(command.id);
     else if (command.type === 'sync') window.close();
-    else if (command.type === 'browse') browse(command.id);
+    else if (command.type === 'browse-path') browsePath(command.id, command.path || []);
     else if (command.type === 'use-path') usePath(command.id, command.path);
     else if (command.type === 'save-layer') saveLayer(command.id, command.name, command.path || []);
   }

@@ -5,14 +5,135 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
+  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v1';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
   var expandedLibraryId = null;
   var currentLibraryId = null, catalog = [], catalogFolders = [], folderPath = [], savePath = [], saveReturnId = null;
-  var catalogComplete = false, catalogId = null, savedPlace = '', catalogProgress = '';
-  // One complete scan per library and plugin session. Do not keep large thumbnails in localStorage.
-  var catalogs = Object.create(null);
+  var catalogComplete = false, catalogId = null, catalogPath = [], savedPlace = '', catalogProgress = '';
+  // Each directory is indexed separately. Opening one folder never scans its siblings
+  // or descendants, and completed directories survive panel / Photopea restarts.
+  var directories = Object.create(null);
+  var directoryLoads = Object.create(null), directoryEpoch = Object.create(null), directoryDeletes = Object.create(null);
+  var directoryFinishes = Object.create(null);
+  var directoryDatabase = null;
+  var savedDirectories = {};
+  try { savedDirectories = JSON.parse(localStorage.getItem(DIRECTORY_READY_KEY)) || {}; } catch (_) {}
+  function directoryKey(id, path) { return id + ':' + JSON.stringify(Array.isArray(path) ? path : []); }
+  function markDirectory(key, exists) {
+    if (exists) savedDirectories[key] = true; else delete savedDirectories[key];
+    try { localStorage.setItem(DIRECTORY_READY_KEY, JSON.stringify(savedDirectories)); } catch (_) {}
+  }
+  function indexDatabase() {
+    if (directoryDatabase) return directoryDatabase;
+    directoryDatabase = new Promise(function (resolve, reject) {
+      var request = indexedDB.open('kubixsio-assets-directories-v1', 1);
+      request.onupgradeneeded = function () { request.result.createObjectStore('directories', {keyPath:'key'}); };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+      request.onblocked = function () { reject(new Error('Baza folderów jest zablokowana przez inne okno.')); };
+    }).catch(function (e) { directoryDatabase = null; throw e; });
+    return directoryDatabase;
+  }
+  async function indexAction(method, value) {
+    var db = await indexDatabase();
+    return new Promise(function (resolve, reject) {
+      var readonly = method === 'get' || method === 'getAllKeys';
+      var tx = db.transaction('directories', readonly ? 'readonly' : 'readwrite');
+      var result, store = tx.objectStore('directories');
+      var request = value === undefined ? store[method]() : store[method](value);
+      request.onsuccess = function () { result = request.result; };
+      tx.oncomplete = function () { resolve(result); };
+      tx.onerror = function () { reject(tx.error || new Error('Nie udało się zapisać folderu.')); };
+      tx.onabort = function () { reject(tx.error || new Error('Zapis folderu przerwany.')); };
+    });
+  }
+  function directoryEntry(id, path) {
+    var key = directoryKey(id, path);
+    return directories[key] || (directories[key] = {key:key, id:id, path:path.slice(), items:[], folders:[], complete:false, progress:''});
+  }
+  function selectDirectory(id, path) {
+    catalogId = id; catalogPath = path.slice();
+    var entry = directoryEntry(id, path);
+    catalog = entry.items; catalogFolders = entry.folders;
+    catalogComplete = entry.complete; catalogProgress = entry.progress;
+    return entry;
+  }
+  function storedDirectory(key) {
+    return indexAction('get', key).then(function (record) {
+      return record && record.complete === true && record.version === 1 && Array.isArray(record.path) &&
+        Array.isArray(record.folders) && Array.isArray(record.items) ? record : null;
+    });
+  }
+  async function persistDirectory(entry) {
+    var record = {key:entry.key, id:entry.id, path:entry.path, version:1, complete:true, folders:entry.folders, items:entry.items};
+    try { await indexAction('put', record); return true; }
+    catch (_) {
+      await indexAction('put', Object.assign({}, record, {items:entry.items.map(function (item) { return Object.assign({}, item, {preview:null}); })}));
+      return false;
+    }
+  }
+  function renderDirectoryViews(id, path) {
+    if (currentLibraryId === id && samePath(folderPath, path)) { selectDirectory(id, path); renderDirectory(); }
+    if (!byId('assetsSavePanel').classList.contains('assets-hidden') && byId('assetsSaveLibrary').value === id && samePath(savePath, path)) renderSaveFolders();
+  }
+  function browseDirectory(id, path) {
+    if (popup && !popup.closed && command && command.type === 'browse-path' && command.id === id && samePath(command.path || [], path)) return;
+    openHelper({type:'browse-path', id:id, path:path.slice()});
+  }
+  function requestDirectory(id, path) {
+    var key = directoryKey(id, path), entry = directoryEntry(id, path);
+    if (entry.complete) { renderDirectoryViews(id, path); return; }
+    if (directoryLoads[key]) return;
+    // First access is opened directly from the click so the browser cannot block the helper.
+    if (!savedDirectories[key]) { browseDirectory(id, path); return; }
+    var epoch = directoryEpoch[key] || 0;
+    directoryLoads[key] = Promise.resolve(directoryDeletes[key]).then(function () { return storedDirectory(key); }).then(function (saved) {
+      if (epoch !== (directoryEpoch[key] || 0)) return;
+      if (saved) {
+        directories[key] = {key:key, id:id, path:path.slice(), items:saved.items, folders:saved.folders, complete:true, progress:''};
+        renderDirectoryViews(id, path);
+      } else {
+        markDirectory(key, false);
+        message('Zapis folderu zniknął. Kliknij go ponownie, aby wczytać tylko ten folder.', true);
+      }
+    }).catch(function () {
+      markDirectory(key, false);
+      message('Nie można otworzyć zapisanej listy. Kliknij folder ponownie.', true);
+    }).finally(function () { delete directoryLoads[key]; });
+  }
+  function finishDirectory(data) {
+    var path = Array.isArray(data.path) ? data.path : [], key = directoryKey(data.id, path);
+    var entry = directories[key], epoch = directoryEpoch[key] || 0;
+    if (!entry || !entry.complete) return;
+    directoryFinishes[key] = data.scan;
+    Promise.resolve(directoryDeletes[key]).then(function () { return persistDirectory(entry); }).then(function (previewsSaved) {
+      if (epoch !== (directoryEpoch[key] || 0)) return;
+      markDirectory(key, true);
+      sendToHelper({type:'directory-saved', id:data.id, path:path, scan:data.scan, ok:true, previewsSaved:previewsSaved});
+      if (!previewsSaved) message('Folder zapisany, ale zabrakło miejsca na miniaturki. Zostaną pokazane nazwy plików.', true);
+    }).catch(function (e) {
+      sendToHelper({type:'directory-saved', id:data.id, path:path, scan:data.scan, ok:false, reason:e.message || String(e)});
+      message('Nie udało się trwale zapisać folderu. Sprawdź miejsce w przeglądarce.', true);
+    });
+  }
+  function invalidateDirectory(id, path) {
+    var key = directoryKey(id, path);
+    directoryEpoch[key] = (directoryEpoch[key] || 0) + 1;
+    markDirectory(key, false);
+    delete directories[key];
+    directoryDeletes[key] = indexAction('delete', key).catch(function () {});
+  }
+  function clearLibraryDirectories(id) {
+    var keys = {};
+    Object.keys(directories).forEach(function (key) { if (directories[key].id === id) { keys[key] = true; delete directories[key]; } });
+    Object.keys(savedDirectories).forEach(function (key) { if (key.indexOf(id + ':') === 0) { keys[key] = true; markDirectory(key, false); } });
+    Object.keys(keys).forEach(function (key) { directoryEpoch[key] = (directoryEpoch[key] || 0) + 1; });
+    return indexAction('getAllKeys').then(function (keys) {
+      return Promise.all(keys.filter(function (key) { return String(key).indexOf(id + ':') === 0; }).map(function (key) { return indexAction('delete', key); }));
+    });
+  }
 
   try {
     var saved = JSON.parse(localStorage.getItem(CACHE_KEY));
@@ -50,17 +171,6 @@
     return el;
   }
   function library(id) { return state.libraries.find(function (item) { return item.id === id; }); }
-  function selectCatalog(id) {
-    catalogId = id;
-    var entry = catalogs[id] || (catalogs[id] = {items: [], folders: [], complete: false, progress: ''});
-    catalog = entry.items; catalogFolders = entry.folders;
-    catalogComplete = entry.complete; catalogProgress = entry.progress;
-    return entry;
-  }
-  function browseLibrary(id) {
-    if (popup && !popup.closed && command && command.type === 'browse' && command.id === id) return;
-    openHelper({type:'browse', id:id});
-  }
   function openHelper(action) {
     if ((importState || exportState && action.type !== 'save-layer') && action.type !== 'sync') { message('Poczekaj na zakończenie działania Photopea.', true); return; }
     channel = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
@@ -110,11 +220,18 @@
       else showLibraries();
       return;
     }
-    if (currentLibraryId && folderPath.length) { folderPath.pop(); renderDirectory(); return; }
+    if (currentLibraryId && folderPath.length) { folderPath.pop(); openDirectory(folderPath); return; }
     if (currentLibraryId) { choosePlace(''); showLibraries(); return; }
     byId('assetsBrowser').classList.add('assets-hidden');
     byId('assetsHome').classList.remove('assets-hidden');
     byId('assetsEntry').setAttribute('aria-expanded', 'true');
+  }
+  function openDirectory(path) {
+    if (!currentLibraryId) return;
+    folderPath = Array.isArray(path) ? path.slice() : [];
+    selectDirectory(currentLibraryId, folderPath);
+    renderDirectory();
+    if (!catalogComplete) requestDirectory(currentLibraryId, folderPath);
   }
   function openLibrary(id, path) {
     var lib = library(id);
@@ -127,12 +244,8 @@
     byId('assetsOverview').classList.add('assets-hidden');
     byId('assetsSavePanel').classList.add('assets-hidden');
     byId('assetsLibraryView').classList.remove('assets-hidden');
-    selectCatalog(id);
     byId('assetsTileGrid').replaceChildren(); byId('assetsFolderList').replaceChildren();
-    byId('assetsLibraryTitle').textContent = lib.name + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
-    byId('assetsCatalogState').textContent = catalogComplete ? 'Zapisana zawartość biblioteki. „Odśwież” wczyta zmiany.' : 'Wczytuję foldery…';
-    renderDirectory();
-    if (!catalogComplete) browseLibrary(id);
+    openDirectory(folderPath);
   }
   function showSaveForm() {
     if (importState || exportState) { message('Poczekaj na zakończenie poprzedniego działania.', true); return; }
@@ -154,27 +267,31 @@
     byId('assetsSaveName').focus();
   }
   function samePath(a, b) { return a.length === b.length && a.every(function (part, index) { return part === b[index]; }); }
-  function childFolders(path) {
-    return catalogFolders.filter(function (parts) { return parts.length === path.length + 1 && samePath(parts.slice(0,-1), path); })
+  function childFolders(path, entry) {
+    var folders = entry ? entry.folders : catalogFolders;
+    return folders.filter(function (parts) { return parts.length === path.length + 1 && samePath(parts.slice(0,-1), path); })
       .sort(function (a,b) { return a[a.length-1].localeCompare(b[b.length-1], 'pl'); });
   }
   function renderSaveFolders() {
     var root = byId('assetsSaveFolders'); root.replaceChildren();
-    var lib = library(byId('assetsSaveLibrary').value);
+    var id = byId('assetsSaveLibrary').value, lib = library(id), entry = id ? directoryEntry(id, savePath) : null;
     byId('assetsSaveFolderPath').textContent = 'Zapis do: ' + (lib ? lib.name : '') + (savePath.length ? ' / ' + savePath.join(' / ') : '');
-    if (savePath.length) root.appendChild(button('← Folder wyżej', function () { savePath.pop(); renderSaveFolders(); }));
-    if (catalogId !== byId('assetsSaveLibrary').value) return;
-    if (!catalogComplete) root.appendChild(node('p', 'assets-muted', catalogProgress || 'Wczytuję podfoldery…'));
-    childFolders(savePath).forEach(function (parts) {
-      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { savePath = parts.slice(); renderSaveFolders(); });
-      entry.className = 'assets-folder-entry'; root.appendChild(entry);
+    if (savePath.length) root.appendChild(button('← Folder wyżej', function () {
+      savePath.pop(); renderSaveFolders(); requestDirectory(id, savePath);
+    }));
+    if (!entry || !entry.complete) root.appendChild(node('p', 'assets-muted', entry && entry.progress || 'Wczytuję tylko ten folder…'));
+    childFolders(savePath, entry || {folders:[]}).forEach(function (parts) {
+      var folder = button('📁 ' + parts[parts.length-1] + ' ›', function () {
+        savePath = parts.slice(); renderSaveFolders(); requestDirectory(id, savePath);
+      });
+      folder.className = 'assets-folder-entry'; root.appendChild(folder);
     });
   }
   function loadSaveFolders() {
     var id = byId('assetsSaveLibrary').value;
     savePath = id === currentLibraryId ? folderPath.slice() : [];
-    if (id) { selectCatalog(id); if (!catalogComplete) browseLibrary(id); }
     renderSaveFolders();
+    if (id && !directoryEntry(id, savePath).complete) requestDirectory(id, savePath);
   }
   function confirmSave() {
     if (exportState) { message('Trwa już zapis warstwy.', true); return; }
@@ -184,7 +301,7 @@
     if (!/\.png$/i.test(name)) name += '.png';
     if (!/^[^\\/:*?"<>|\x00-\x1f]+\.png$/i.test(name) || /[. ]\.png$/i.test(name)) { message('Podaj poprawną nazwę pliku PNG.', true); return; }
     if (vignetteStage !== 'idle' || watermarkStage !== 'idle' || window.folderizeBusy || importState) { message('Photopea wykonuje inne działanie.', true); return; }
-    if (catalogId !== id || !catalogComplete) { message('Poczekaj, aż wczytają się foldery biblioteki.', true); return; }
+    if (!directoryEntry(id, savePath).complete) { message('Poczekaj, aż ten folder zostanie wczytany.', true); return; }
     exportState = {id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), libraryId: id, name: name, path: savePath.slice(), stage: 'permission', buffer: null};
     openHelper({type: 'save-layer', id: id, name: name, path: savePath.slice()});
     message('Sprawdzam dostęp do zapisu w bibliotece…');
@@ -229,14 +346,14 @@
     });
   }
   function renderDirectory() {
-    if (!currentLibraryId || catalogId !== currentLibraryId) return;
+    if (!currentLibraryId || catalogId !== currentLibraryId || !samePath(catalogPath, folderPath)) return;
     try { localStorage.setItem(PATH_KEY, JSON.stringify(folderPath)); } catch (_) {}
     var lib = library(currentLibraryId), root = byId('assetsFolderList'), tiles = byId('assetsTileGrid');
     root.replaceChildren(); tiles.replaceChildren();
     byId('assetsLibraryTitle').textContent = (lib ? lib.name : '') + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
     var folders = childFolders(folderPath);
     folders.forEach(function (parts) {
-      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { folderPath = parts.slice(); renderDirectory(); });
+      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { openDirectory(parts); });
       entry.className = 'assets-folder-entry'; root.appendChild(entry);
     });
     // When a directory contains both subfolders and files, keep its files reachable
@@ -264,12 +381,14 @@
   function refreshLocal(id) {
     var lib = library(id);
     if (!lib) { message('Nie znaleziono biblioteki do odświeżenia.', true); return; }
-    if (popup && !popup.closed && command && command.type === 'browse' && command.id === id) {
+    if (popup && !popup.closed && command && command.type === 'browse-path' && command.id === id) {
       popup.close(); popup = null; command = null; channel = '';
     }
-    delete catalogs[id];
-    if (catalogId === id) selectCatalog(id);
-    message('Lista wyczyszczona. Przy kolejnym otwarciu biblioteka wczyta foldery ponownie.');
+    clearLibraryDirectories(id).catch(function () {
+      message('Nie udało się usunąć zapisanego katalogu. Spróbuj ponownie.', true);
+    });
+    if (catalogId === id) selectDirectory(id, folderPath);
+    message('Cache biblioteki wyczyszczony. Foldery będą ponownie wczytywane dopiero po ich otwarciu.');
   }
   function section(listRoot, heading, files, suffix) {
     var root = byId(listRoot);
@@ -323,8 +442,8 @@
       card.appendChild(top);card.appendChild(actions);root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
-    section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,5), false);
     section('assetsFavorites', 'ULUBIONE', files.filter(function (f) {return f.favorite;}), false);
+    section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,5), false);
     section('assetsFrequent', 'NAJCZĘŚCIEJ UŻYWANE', files.filter(function (f) {return f.count > 0 && !f.favorite;}).sort(function (a,b) {return b.count-a.count;}).slice(0,3), true);
   }
   function fail(reason) { importState = null; setStatus('ASSETS: ' + reason, 'err'); message(reason, true); sendToHelper({type: 'import-result', ok: false, reason: reason}); }
@@ -376,30 +495,24 @@
       var selected = source.activeLayer;
       if (!selected) throw new Error('Zaznacz warstwę do zapisania.');
       if (!selected.visible) throw new Error('Zaznaczona warstwa jest ukryta.');
-      if (selected.isBackgroundLayer) throw new Error('Zamień Background na zwykłą warstwę przed zapisaniem do ASSETS.');
       var w = Number(source.width), h = Number(source.height);
       if (!(w > 0 && h > 0)) throw new Error('Nie udało się odczytać wymiarów dokumentu.');
       temporary = app.documents.add(w, h, 72, 'KUBIXSIO ASSET', NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
+      var starter = temporary.activeLayer;
+      // Register the temporary document immediately, so every failure path can close it.
+      window.ktxAssetsExport = {id:id, source:source, temporary:temporary};
       selected.duplicate(temporary, ElementPlacement.PLACEATBEGINNING);
       app.activeDocument = temporary;
-      // The new document has only the chosen layer on a transparent canvas.
-      // Trimming removes transparent margins when Photopea supports it.
+      // Remove only the exact empty layer created with the temporary document.
+      if (starter && temporary.layers.length > 1) try { starter.remove(); } catch (_) {}
       try { temporary.trim(TrimType.TRANSPARENT, true, true, true, true); } catch (_) {}
-      window.ktxAssetsExport = {id:id, source:source, temporary:temporary};
-      app.echoToOE('KTX_ASSET_PREPARED|' + id);
+      temporary.saveToOE('png');
     } catch (e) {
+      window.ktxAssetsExport = null;
       if (temporary) try { temporary.close(SaveOptions.DONOTSAVECHANGES); } catch (_) {}
       if (source) try { app.activeDocument = source; } catch (_) {}
       app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString());
     }
-  }
-  function savePreparedLayer(id) {
-    try {
-      var job = window.ktxAssetsExport;
-      if (!job || job.id !== id || !job.temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
-      app.activeDocument = job.temporary;
-      job.temporary.saveToOE('png');
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
   }
   function closePreparedLayer(id) {
     try {
@@ -414,7 +527,7 @@
   }
   function startExport(data) {
     if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name || !samePath(exportState.path, data.path || [])) return;
-    exportState.stage = 'preparing';
+    exportState.stage = 'saving'; exportState.done = false; exportState.buffer = null;
     setStatus('ASSETS: eksportuję zaznaczoną warstwę…', 'busy');
     postScript('(' + exportSelectedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
   }
@@ -422,14 +535,23 @@
     if (!exportState || exportState.stage !== 'saving' || !exportState.buffer || !exportState.done) return;
     exportState.stage = 'cleaning';
     if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.timer = null; exportState.ack = false; exportState.cleanupDone = false;
     postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+  }
+  function finishCleanup() {
+    if (!exportState || exportState.stage !== 'cleaning' || !exportState.ack || !exportState.cleanupDone || !exportState.buffer) return;
+    if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.stage = 'writing';
+    var out = exportState.buffer;
+    exportState.buffer = null;
+    sendToHelper({type:'write-buffer', buffer:out}, [out]);
   }
   function failExport(reason) {
     if (!exportState) return;
     var failed = exportState;
     if (failed.timer) clearTimeout(failed.timer);
     exportState = null;
-    if (failed.stage === 'preparing' || failed.stage === 'saving')
+    if (failed.stage === 'saving' || failed.stage === 'cleaning')
       postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(failed.id) + ');');
     setStatus('ASSETS: ' + reason, 'err');
     message(reason, true);
@@ -442,55 +564,51 @@
       if (data.event === 'snapshot' && data.snapshot) {
         var previous = state.files;
         state = data.snapshot;
-        Object.keys(catalogs).forEach(function (id) { if (!library(id)) delete catalogs[id]; });
+        Object.keys(directories).forEach(function (key) { if (!library(directories[key].id)) delete directories[key]; });
         restoreFavorites(previous);
         saveState();
         render();
         if (currentLibraryId && !library(currentLibraryId)) { choosePlace(''); showLibraries(); }
         if (command && command.type === 'sync') message('Biblioteki wczytane.');
       }
-      if (data.event === 'catalog-start' && data.id === catalogId) {
-        catalogs[data.id] = {items: [], folders: [], complete: false, progress: 'Wczytuję foldery…'};
-        selectCatalog(data.id);
-        if (data.id === currentLibraryId) renderDirectory();
-        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
+      if (data.event === 'directory-start' && Array.isArray(data.path)) {
+        var startKey = directoryKey(data.id, data.path);
+        directories[startKey] = {key:startKey, id:data.id, path:data.path.slice(), items:[], folders:[], complete:false, progress:'Wczytuję tylko ten folder…'};
+        renderDirectoryViews(data.id, data.path);
       }
-      if (data.event === 'catalog-folder' && data.id === catalogId && Array.isArray(data.path)) {
-        catalogFolders.push(data.path);
-        if (data.id === currentLibraryId && data.path.length === folderPath.length + 1 && samePath(data.path.slice(0,-1), folderPath)) renderDirectory();
+      if (data.event === 'directory-progress' && Array.isArray(data.path)) {
+        var progressEntry = directoryEntry(data.id, data.path);
+        progressEntry.progress = 'Miniaturki: ' + data.done + '/' + data.total + ' (' + data.percent + '%)';
+        renderDirectoryViews(data.id, data.path);
       }
-      if (data.event === 'catalog-progress' && data.id === catalogId) {
-        catalogProgress = data.phase === 'folders' ? 'Znaleziono folderów: ' + data.folders + ' · przeglądam strukturę…' :
-          'Miniaturki: ' + data.done + '/' + data.total + ' (' + data.percent + '%)';
-        catalogs[data.id].progress = catalogProgress;
-        if (data.id === currentLibraryId && !catalogComplete) byId('assetsCatalogState').textContent = catalogProgress;
-        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
+      if (data.event === 'directory-complete' && Array.isArray(data.path)) {
+        var completedKey = directoryKey(data.id, data.path), completed = directoryEntry(data.id, data.path);
+        completed.folders = Array.isArray(data.folders) ? data.folders : [];
+        completed.items = Array.isArray(data.items) ? data.items : [];
+        completed.complete = true; completed.progress = '';
+        directories[completedKey] = completed;
+        renderDirectoryViews(data.id, data.path);
+        finishDirectory(data);
       }
-      if (data.event === 'catalog-items' && data.id === catalogId && Array.isArray(data.items)) {
-        catalog.push.apply(catalog, data.items);
-        if (data.id === currentLibraryId && data.items.some(function (item) { return samePath(item.path.slice(0,-1), folderPath); })) renderDirectory();
+      if (data.event === 'directory-save-retry' && Array.isArray(data.path)) {
+        var retryKey = directoryKey(data.id, data.path);
+        if (directories[retryKey] && directoryFinishes[retryKey] === data.scan) finishDirectory(data);
       }
-      if (data.event === 'catalog-complete' && data.id === catalogId) {
-        catalogComplete = true; catalogProgress = '';
-        catalogs[data.id].complete = true; catalogs[data.id].progress = '';
-        if (data.id === currentLibraryId && folderPath.length && !catalogFolders.some(function (parts) { return samePath(parts, folderPath); })) folderPath = [];
-        if (!byId('assetsSavePanel').classList.contains('assets-hidden') && savePath.length && !catalogFolders.some(function (parts) { return samePath(parts, savePath); })) savePath = [];
-        if (data.id === currentLibraryId) renderDirectory();
-        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) renderSaveFolders();
-      }
-      if (data.event === 'catalog-error' && data.id === catalogId) {
-        delete catalogs[data.id];
-        if (data.id === currentLibraryId) byId('assetsCatalogState').textContent = data.reason;
-        if (!byId('assetsSavePanel').classList.contains('assets-hidden')) { byId('assetsSaveFolders').replaceChildren(node('p','assets-muted',data.reason)); }
+      if (data.event === 'directory-error' && Array.isArray(data.path)) {
+        var errorKey = directoryKey(data.id, data.path);
+        delete directories[errorKey]; markDirectory(errorKey, false);
+        if (data.id === currentLibraryId && samePath(data.path, folderPath)) byId('assetsCatalogState').textContent = data.reason;
+        if (!byId('assetsSavePanel').classList.contains('assets-hidden') && byId('assetsSaveLibrary').value === data.id && samePath(data.path, savePath))
+          byId('assetsSaveFolders').replaceChildren(node('p','assets-muted',data.reason));
       }
       if (data.event === 'write-ready') startExport(data);
       if (data.event === 'write-complete' && exportState && data.id === exportState.libraryId && data.name === exportState.name && samePath(data.path || [], exportState.path)) {
         var savedName = exportState.name, savedPath = exportState.path.slice();
         exportState = null;
-        delete catalogs[data.id]; selectCatalog(data.id);
+        invalidateDirectory(data.id, savedPath);
         currentLibraryId = data.id; folderPath = savedPath; choosePlace(data.id);
         byId('assetsSavePanel').classList.add('assets-hidden'); byId('assetsLibraryView').classList.remove('assets-hidden');
-        renderDirectory();
+        selectDirectory(data.id, savedPath); renderDirectory();
         message('Zapisano ' + savedName + ' do ASSETS.');
         setStatus('ASSETS: zapisano ' + savedName, '');
       }
@@ -505,13 +623,8 @@
       if (typeof event.data === 'string') {
         var err = 'KTX_ASSET_EXPORT_ERR|' + exportState.id + '|';
         if (event.data.indexOf(err) === 0) { failExport(event.data.substring(err.length)); return; }
-        if (event.data === 'KTX_ASSET_PREPARED|' + exportState.id && exportState.stage === 'preparing') { exportState.ack = true; return; }
-        if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') { exportState.ack = true; return; }
-        if (event.data === 'done' && exportState.stage === 'preparing') {
-          if (!exportState.ack) { failExport('Nie udało się przygotować zaznaczonej warstwy.'); return; }
-          exportState.stage = 'saving'; exportState.ack = false;
-          postScript('(' + savePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
-          return;
+        if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') {
+          exportState.ack = true; finishCleanup(); return;
         }
         if (event.data === 'done' && exportState.stage === 'saving') {
           exportState.done = true;
@@ -522,11 +635,11 @@
           return;
         }
         if (event.data === 'done' && exportState.stage === 'cleaning') {
-          if (!exportState.ack || !exportState.buffer) { failExport('Nie udało się zakończyć eksportu warstwy.'); return; }
-          exportState.stage = 'writing';
-          var out = exportState.buffer;
-          exportState.buffer = null;
-          sendToHelper({type:'write-buffer', buffer:out}, [out]);
+          exportState.cleanupDone = true;
+          finishCleanup();
+          if (exportState && exportState.stage === 'cleaning' && !exportState.timer) exportState.timer = setTimeout(function () {
+            if (exportState && exportState.stage === 'cleaning') failExport('Nie udało się zamknąć tymczasowego projektu po eksporcie.');
+          }, 10000);
           return;
         }
       }
