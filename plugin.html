@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
-<link rel="stylesheet" href="plugin-v71-assets.css?v=89">
+<link rel="stylesheet" href="plugin-v71-assets.css?v=90">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -66,12 +66,39 @@
           <div id="assetsRecent"></div>
           <div id="assetsFrequent"></div>
         </div>
-        <p class="assets-subtitle">TWOJE BIBLIOTEKI</p>
+        <div class="assets-list-head">
+          <p class="assets-subtitle">TWOJE BIBLIOTEKI</p>
+          <div class="assets-sort">
+            <button type="button" id="assetsLibrarySortButton" class="assets-sort-button" title="Sortowanie" aria-label="Sortowanie bibliotek" aria-haspopup="menu" aria-expanded="false">⇅</button>
+            <div id="assetsLibrarySortMenu" class="assets-sort-menu assets-hidden" role="menu">
+              <button type="button" data-assets-sort="alpha" role="menuitem">Alfabetycznie</button>
+              <button type="button" data-assets-sort="newest" role="menuitem">Najnowsze</button>
+              <button type="button" data-assets-sort="oldest" role="menuitem">Najstarsze</button>
+              <button type="button" data-assets-sort="frequent" role="menuitem">Najczęściej używane</button>
+            </div>
+          </div>
+        </div>
         <div id="assetsLibraryList" class="assets-stack"></div>
       </div>
       <div id="assetsLibraryView" class="assets-hidden">
-        <div class="assets-view-head"><strong id="assetsLibraryTitle"></strong><button type="button" id="assetsSaveHere">ZAPISZ DO ASSETS</button></div>
+        <div class="assets-view-head">
+          <strong id="assetsLibraryTitle"></strong>
+          <div class="assets-view-actions">
+            <div class="assets-sort">
+              <button type="button" id="assetsDirectorySortButton" class="assets-sort-button" title="Sortowanie" aria-label="Sortowanie folderów i plików" aria-haspopup="menu" aria-expanded="false">⇅</button>
+              <div id="assetsDirectorySortMenu" class="assets-sort-menu assets-hidden" role="menu">
+                <button type="button" data-assets-sort="alpha" role="menuitem">Alfabetycznie</button>
+                <button type="button" data-assets-sort="newest" role="menuitem">Najnowsze</button>
+                <button type="button" data-assets-sort="oldest" role="menuitem">Najstarsze</button>
+                <button type="button" data-assets-sort="frequent" role="menuitem">Najczęściej używane</button>
+              </div>
+            </div>
+            <button type="button" id="assetsSaveHere">ZAPISZ DO ASSETS</button>
+          </div>
+        </div>
         <p id="assetsCatalogState" class="assets-muted" role="status"></p>
+        <div id="assetsPinnedFolderList" class="assets-stack assets-folder-list"></div>
+        <div id="assetsPinnedTileGrid" class="assets-tile-grid"></div>
         <div id="assetsFolderList" class="assets-stack"></div>
         <div id="assetsTileGrid" class="assets-tile-grid"></div>
       </div>
@@ -95,7 +122,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v89</div>
+  <div class="footer">KUBIXSIO TOOLS • v90</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -112,7 +139,7 @@
 <script src="plugin-v35-core.js?v=70"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
-<script src="plugin-v71-assets.js?v=89"></script>
+<script src="plugin-v71-assets.js?v=90"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
