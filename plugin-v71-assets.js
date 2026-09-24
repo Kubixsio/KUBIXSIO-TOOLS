@@ -317,7 +317,11 @@
   function showInfo(item) {
     var root = byId('assetsInfoText'); root.replaceChildren();
     var lib = library(item.libraryId);
-    [['Nazwa pliku', item.name], ['Format', item.format], ['Rozdzielczość', item.width && item.height ? item.width + ' × ' + item.height + ' px' : 'Niedostępna dla tego formatu'], ['Rozmiar pliku', item.size < 1048576 ? (item.size / 1024).toFixed(1) + ' KB' : (item.size / 1048576).toFixed(2) + ' MB'], ['Biblioteka / folder', (lib ? lib.name : '') + (item.path.length > 1 ? ' / ' + item.path.slice(0,-1).join(' / ') : '')]].forEach(function (row) {
+    var modified = Number(item.modified);
+    var modifiedLabel = modified && isFinite(modified) ? new Date(modified).toLocaleString('pl-PL', {
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+    }) : 'Niedostępna';
+    [['Nazwa pliku', item.name], ['Format', item.format], ['Rozdzielczość', item.width && item.height ? item.width + ' × ' + item.height + ' px' : 'Niedostępna dla tego formatu'], ['Rozmiar pliku', item.size < 1048576 ? (item.size / 1024).toFixed(1) + ' KB' : (item.size / 1048576).toFixed(2) + ' MB'], ['Data zapisu / modyfikacji', modifiedLabel], ['Biblioteka / folder', (lib ? lib.name : '') + (item.path.length > 1 ? ' / ' + item.path.slice(0,-1).join(' / ') : '')]].forEach(function (row) {
       root.appendChild(node('div', '', row[0] + ': ' + row[1]));
     });
     byId('assetsInfo').classList.remove('assets-hidden');
@@ -427,7 +431,8 @@
       actions.appendChild(choose);
       actions.appendChild(button('Odśwież', function () { refreshLocal(lib.id); }));
       actions.appendChild(button(lib.enabled ? 'Wyłącz' : 'Włącz', function () { openHelper({type: 'toggle', id: lib.id}); }));
-      actions.appendChild(button('Usuń z Kubixsio Tools', function () { openHelper({type: 'remove', id: lib.id}); }));
+      actions.appendChild(button('Zmień nazwę', function () { openHelper({type: 'rename', id: lib.id}); }));
+      actions.appendChild(button('Usuń', function () { openHelper({type: 'remove', id: lib.id}); }));
       actions.appendChild(node('p', 'assets-muted assets-location-note', '„Wybierz plik” otwiera systemowe okno jako alternatywny sposób wstawienia.'));
       var top = node('div', 'assets-card-top'); top.appendChild(head); top.appendChild(manage);
       card.appendChild(top);card.appendChild(actions);root.appendChild(card);
