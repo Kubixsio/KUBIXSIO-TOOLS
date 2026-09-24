@@ -251,7 +251,7 @@
       for await (var handle of directory.values()) children.push(handle);
       if (generation !== scanning) return;
       var folderHandles = children.filter(function (handle) {
-        return handle.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN)$/i.test(handle.name);
+        return handle.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN|tex)$/i.test(handle.name);
       }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
       var folders = [];
       for (var folderIndex = 0; folderIndex < folderHandles.length; folderIndex++) {

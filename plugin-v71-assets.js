@@ -5,7 +5,7 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
-  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v3';
+  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v4';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
@@ -28,7 +28,7 @@
   function indexDatabase() {
     if (directoryDatabase) return directoryDatabase;
     directoryDatabase = new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-directories-v3', 1);
+      var request = indexedDB.open('kubixsio-assets-directories-v4', 1);
       request.onupgradeneeded = function () { request.result.createObjectStore('directories', {keyPath:'key'}); };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error); };
@@ -62,12 +62,12 @@
   }
   function storedDirectory(key) {
     return indexAction('get', key).then(function (record) {
-      return record && record.complete === true && record.version === 3 && Array.isArray(record.path) &&
+      return record && record.complete === true && record.version === 4 && Array.isArray(record.path) &&
         Array.isArray(record.folders) && Array.isArray(record.items) ? record : null;
     });
   }
   async function persistDirectory(entry) {
-    var record = {key:entry.key, id:entry.id, path:entry.path, version:3, complete:true, folders:entry.folders, items:entry.items};
+    var record = {key:entry.key, id:entry.id, path:entry.path, version:4, complete:true, folders:entry.folders, items:entry.items};
     try { await indexAction('put', record); return true; }
     catch (_) {
       await indexAction('put', Object.assign({}, record, {items:entry.items.map(function (item) { return Object.assign({}, item, {preview:null}); })}));
@@ -521,7 +521,7 @@
     setStatus('Dodano ' + success.name + ' jako Smart Object (' + success.dims + ').', '');
     sendToHelper({type: 'import-result', ok: true});
   }
-  function createExportDocument(id) {
+  function createExportDocument() {
     var source = null, temporary = null;
     try {
       source = app.activeDocument;
@@ -529,64 +529,76 @@
       var selected = source.activeLayer;
       if (!selected) throw new Error('Zaznacz warstwę do zapisania.');
       if (!selected.visible) throw new Error('Zaznaczona warstwa jest ukryta.');
-      var w = source.width * 1, h = source.height * 1;
+      var w = source.width * 1, h = source.height * 1, sourceIndex = -1;
       if (!(w > 0 && h > 0)) throw new Error('Nie udało się odczytać wymiarów dokumentu.');
-      temporary = app.documents.add(w, h, 72, 'KUBIXSIO ASSET', NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
-      window.ktxAssetsExportId = id;
-      window.ktxAssetsExportSource = source;
-      window.ktxAssetsExportTemporary = temporary;
-      app.echoToOE('KTX_ASSET_EXPORT_CREATED|' + id);
+      var sourceName = String(source.name);
+      for (var index = 0; index < app.documents.length; index++) {
+        if (String(app.documents[index].name) === sourceName) { sourceIndex = index; break; }
+      }
+      if (sourceIndex < 0) throw new Error('Nie znaleziono otwartego dokumentu.');
+      // Keep only primitive state between scripts. Persisting Photopea Document
+      // host objects on window can freeze the real plugin even when it works in Playground.
+      window.ktxAssetsExportSourceIndex = sourceIndex;
+      var temporaryName = '__KTX_ASSET_' + window.ktxAssetsExportToken + '__';
+      temporary = app.documents.add(Math.round(w), Math.round(h), 72, temporaryName);
+      app.echoToOE('KTX_ASSET_EXPORT_CREATED|' + window.ktxAssetsExportToken + '|' + window.ktxAssetsExportSourceIndex);
     } catch (e) {
-      window.ktxAssetsExportId = null;
-      window.ktxAssetsExportSource = null;
-      window.ktxAssetsExportTemporary = null;
       if (temporary) try { temporary.close(SaveOptions.DONOTSAVECHANGES); } catch (_) {}
       if (source) try { app.activeDocument = source; } catch (_) {}
-      app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString());
+      app.echoToOE('KTX_ASSET_EXPORT_ERR|' + window.ktxAssetsExportToken + '|' + e.toString());
     }
   }
-  function duplicateExportLayer(id) {
+  function duplicateExportLayer() {
     try {
-      var source = window.ktxAssetsExportSource, temporary = window.ktxAssetsExportTemporary;
-      if (window.ktxAssetsExportId !== id || !source || !temporary) throw new Error('Nie znaleziono dokumentu do eksportu.');
+      var temporaryName = '__KTX_ASSET_' + window.ktxAssetsExportToken + '__', temporary = null;
+      for (var index = 0; index < app.documents.length; index++) {
+        if (String(app.documents[index].name).indexOf(temporaryName) === 0) { temporary = app.documents[index]; break; }
+      }
+      var source = app.documents[window.ktxAssetsExportSourceIndex];
+      if (!source || !temporary || source === temporary) throw new Error('Nie znaleziono dokumentu do eksportu.');
       app.activeDocument = source;
       var selected = source.activeLayer;
       if (!selected) throw new Error('Zaznacz warstwę do zapisania.');
       selected.duplicate(temporary, ElementPlacement.PLACEATBEGINNING);
       app.activeDocument = temporary;
-      app.echoToOE('KTX_ASSET_EXPORT_DUPLICATED|' + id);
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+      app.echoToOE('KTX_ASSET_EXPORT_DUPLICATED|' + window.ktxAssetsExportToken);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + window.ktxAssetsExportToken + '|' + e.toString()); }
   }
-  function prepareExportLayer(id) {
+  function prepareExportLayer() {
     try {
-      var temporary = window.ktxAssetsExportTemporary;
-      if (window.ktxAssetsExportId !== id || !temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      var temporaryName = '__KTX_ASSET_' + window.ktxAssetsExportToken + '__', temporary = null;
+      for (var index = 0; index < app.documents.length; index++) {
+        if (String(app.documents[index].name).indexOf(temporaryName) === 0) { temporary = app.documents[index]; break; }
+      }
+      if (!temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
       app.activeDocument = temporary;
       if (temporary.layers.length > 1) temporary.layers[temporary.layers.length - 1].remove();
       temporary.trim(TrimType.TRANSPARENT, true, true, true, true);
-      app.echoToOE('KTX_ASSET_PREPARED|' + id);
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+      app.echoToOE('KTX_ASSET_PREPARED|' + window.ktxAssetsExportToken);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + window.ktxAssetsExportToken + '|' + e.toString()); }
   }
-  function savePreparedLayer(id) {
+  function savePreparedLayer() {
     try {
-      var temporary = window.ktxAssetsExportTemporary;
-      if (window.ktxAssetsExportId !== id || !temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      var temporaryName = '__KTX_ASSET_' + window.ktxAssetsExportToken + '__', temporary = null;
+      for (var index = 0; index < app.documents.length; index++) {
+        if (String(app.documents[index].name).indexOf(temporaryName) === 0) { temporary = app.documents[index]; break; }
+      }
+      if (!temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
       app.activeDocument = temporary;
       temporary.saveToOE('png');
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + window.ktxAssetsExportToken + '|' + e.toString()); }
   }
-  function closePreparedLayer(id) {
+  function closePreparedLayer() {
     try {
-      if (window.ktxAssetsExportId === id) {
-        var source = window.ktxAssetsExportSource, temporary = window.ktxAssetsExportTemporary;
-        window.ktxAssetsExportId = null;
-        window.ktxAssetsExportSource = null;
-        window.ktxAssetsExportTemporary = null;
-        try { if (temporary) temporary.close(SaveOptions.DONOTSAVECHANGES); }
-        finally { if (source) app.activeDocument = source; }
+      var temporaryName = '__KTX_ASSET_' + window.ktxAssetsExportToken + '__', temporary = null;
+      for (var index = 0; index < app.documents.length; index++) {
+        if (String(app.documents[index].name).indexOf(temporaryName) === 0) { temporary = app.documents[index]; break; }
       }
-      app.echoToOE('KTX_ASSET_CLOSED|' + id);
-    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+      if (temporary) temporary.close(SaveOptions.DONOTSAVECHANGES);
+      if (window.ktxAssetsExportSourceIndex >= 0 && window.ktxAssetsExportSourceIndex < app.documents.length)
+        app.activeDocument = app.documents[window.ktxAssetsExportSourceIndex];
+      app.echoToOE('KTX_ASSET_CLOSED|' + window.ktxAssetsExportToken);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + window.ktxAssetsExportToken + '|' + e.toString()); }
   }
   function armExportTimeout(stage, reason, delay) {
     if (!exportState || exportState.stage !== stage) return;
@@ -597,45 +609,45 @@
   }
   function startExport(data) {
     if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name || !samePath(exportState.path, data.path || [])) return;
-    exportState.stage = 'creating'; exportState.stepAck = false; exportState.stepDone = false; exportState.buffer = null;
+    exportState.stage = 'creating'; exportState.buffer = null; exportState.sourceIndex = -1;
     setStatus('ASSETS: tworzę bezpieczny dokument eksportu…', 'busy');
-    postScript('(' + createExportDocument.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    postScript('window.ktxAssetsExportToken=' + JSON.stringify(exportState.id) + ';window.ktxAssetsExportSourceIndex=-1;(' + createExportDocument.toString() + ')();');
     armExportTimeout('creating', 'Photopea nie utworzyła dokumentu eksportu.');
   }
   function startExportDuplicate() {
-    if (!exportState || exportState.stage !== 'creating' || !exportState.stepAck || !exportState.stepDone) return;
+    if (!exportState || exportState.stage !== 'creating' || exportState.sourceIndex < 0) return;
     if (exportState.timer) clearTimeout(exportState.timer);
-    exportState.stage = 'duplicating'; exportState.stepAck = false; exportState.stepDone = false; exportState.timer = null;
+    exportState.stage = 'duplicating'; exportState.timer = null;
     setStatus('ASSETS: kopiuję zaznaczoną warstwę…', 'busy');
-    postScript('(' + duplicateExportLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    postScript('(' + duplicateExportLayer.toString() + ')();');
     armExportTimeout('duplicating', 'Photopea nie skopiowała zaznaczonej warstwy.');
   }
   function startExportPrepare() {
-    if (!exportState || exportState.stage !== 'duplicating' || !exportState.stepAck || !exportState.stepDone) return;
+    if (!exportState || exportState.stage !== 'duplicating') return;
     if (exportState.timer) clearTimeout(exportState.timer);
-    exportState.stage = 'preparing'; exportState.stepAck = false; exportState.stepDone = false; exportState.timer = null;
+    exportState.stage = 'preparing'; exportState.timer = null;
     setStatus('ASSETS: przycinam przezroczysty obszar…', 'busy');
-    postScript('(' + prepareExportLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    postScript('(' + prepareExportLayer.toString() + ')();');
     armExportTimeout('preparing', 'Photopea nie przygotowała zaznaczonej warstwy.');
   }
   function startPreparedSave() {
-    if (!exportState || exportState.stage !== 'preparing' || !exportState.stepAck || !exportState.stepDone) return;
+    if (!exportState || exportState.stage !== 'preparing') return;
     if (exportState.timer) clearTimeout(exportState.timer);
     exportState.stage = 'saving'; exportState.done = false; exportState.buffer = null; exportState.timer = null;
     setStatus('ASSETS: eksportuję PNG zaznaczonej warstwy…', 'busy');
-    postScript('(' + savePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    postScript('(' + savePreparedLayer.toString() + ')();');
     armExportTimeout('saving', 'Photopea nie zwróciła PNG zaznaczonej warstwy.');
   }
   function finishExport() {
-    if (!exportState || exportState.stage !== 'saving' || !exportState.buffer || !exportState.done) return;
+    if (!exportState || exportState.stage !== 'saving' || !exportState.buffer) return;
     exportState.stage = 'cleaning';
     if (exportState.timer) clearTimeout(exportState.timer);
-    exportState.timer = null; exportState.ack = false; exportState.cleanupDone = false;
-    postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    exportState.timer = null; exportState.ack = false;
+    postScript('(' + closePreparedLayer.toString() + ')();');
     armExportTimeout('cleaning', 'Nie udało się zamknąć tymczasowego projektu po eksporcie.', 15000);
   }
   function finishCleanup() {
-    if (!exportState || exportState.stage !== 'cleaning' || !exportState.ack || !exportState.cleanupDone || !exportState.buffer) return;
+    if (!exportState || exportState.stage !== 'cleaning' || !exportState.ack || !exportState.buffer) return;
     if (exportState.timer) clearTimeout(exportState.timer);
     exportState.stage = 'writing';
     var out = exportState.buffer;
@@ -648,7 +660,7 @@
     if (failed.timer) clearTimeout(failed.timer);
     exportState = null;
     if (failed.stage === 'creating' || failed.stage === 'duplicating' || failed.stage === 'preparing' || failed.stage === 'saving' || failed.stage === 'cleaning')
-      postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(failed.id) + ');');
+      postScript('(' + closePreparedLayer.toString() + ')();');
     setStatus('ASSETS: ' + reason, 'err');
     message(reason, true);
     sendToHelper({type:'write-cancel', reason:reason});
@@ -679,7 +691,9 @@
       }
       if (data.event === 'directory-complete' && Array.isArray(data.path)) {
         var completedKey = directoryKey(data.id, data.path), completed = directoryEntry(data.id, data.path);
-        completed.folders = Array.isArray(data.folders) ? data.folders : [];
+        completed.folders = (Array.isArray(data.folders) ? data.folders : []).filter(function (path) {
+          return Array.isArray(path) && path.length && !/^tex$/i.test(path[path.length - 1]);
+        });
         completed.items = Array.isArray(data.items) ? data.items : [];
         completed.complete = true; completed.progress = '';
         directories[completedKey] = completed;
@@ -721,36 +735,20 @@
       if (typeof event.data === 'string') {
         var err = 'KTX_ASSET_EXPORT_ERR|' + exportState.id + '|';
         if (event.data.indexOf(err) === 0) { failExport(event.data.substring(err.length)); return; }
-        if (event.data === 'KTX_ASSET_EXPORT_CREATED|' + exportState.id && exportState.stage === 'creating') {
-          exportState.stepAck = true; startExportDuplicate(); return;
+        var created = 'KTX_ASSET_EXPORT_CREATED|' + exportState.id + '|';
+        if (event.data.indexOf(created) === 0 && exportState.stage === 'creating') {
+          exportState.sourceIndex = parseInt(event.data.substring(created.length), 10);
+          if (!(exportState.sourceIndex >= 0)) { failExport('Photopea nie wskazała dokumentu źródłowego.'); return; }
+          startExportDuplicate(); return;
         }
         if (event.data === 'KTX_ASSET_EXPORT_DUPLICATED|' + exportState.id && exportState.stage === 'duplicating') {
-          exportState.stepAck = true; startExportPrepare(); return;
+          startExportPrepare(); return;
         }
         if (event.data === 'KTX_ASSET_PREPARED|' + exportState.id && exportState.stage === 'preparing') {
-          exportState.stepAck = true; startPreparedSave(); return;
+          startPreparedSave(); return;
         }
         if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') {
           exportState.ack = true; finishCleanup(); return;
-        }
-        if (event.data === 'done' && exportState.stage === 'creating') {
-          exportState.stepDone = true; startExportDuplicate(); return;
-        }
-        if (event.data === 'done' && exportState.stage === 'duplicating') {
-          exportState.stepDone = true; startExportPrepare(); return;
-        }
-        if (event.data === 'done' && exportState.stage === 'preparing') {
-          exportState.stepDone = true; startPreparedSave(); return;
-        }
-        if (event.data === 'done' && exportState.stage === 'saving') {
-          exportState.done = true;
-          finishExport();
-          return;
-        }
-        if (event.data === 'done' && exportState.stage === 'cleaning') {
-          exportState.cleanupDone = true;
-          finishCleanup();
-          return;
         }
       }
     }
