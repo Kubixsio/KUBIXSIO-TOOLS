@@ -443,8 +443,8 @@
         toggleFavorite(tracked); star.textContent = tracked.favorite ? '★' : '☆';
       }); star.className = 'assets-tile-fav'; star.title = 'Ulubione';
       var pin = pinButton(filePinKey(item), 'plik ' + item.name, renderDirectory);
-      tools.appendChild(info); tools.appendChild(star); tools.appendChild(pin);
-      tile.appendChild(open); tile.appendChild(tools); root.appendChild(tile);
+      tools.appendChild(info); tools.appendChild(star);
+      tile.appendChild(open); tile.appendChild(tools); tile.appendChild(pin); root.appendChild(tile);
     });
   }
   function renderDirectory() {
@@ -538,10 +538,9 @@
       actions.appendChild(button('Zmień nazwę', function () { openHelper({type: 'rename', id: lib.id}); }));
       actions.appendChild(button('Usuń', function () { openHelper({type: 'remove', id: lib.id}); }));
       actions.appendChild(node('p', 'assets-muted assets-location-note', '„Wybierz plik” otwiera systemowe okno jako alternatywny sposób wstawienia.'));
-      var top = node('div', 'assets-card-top'); top.appendChild(head);
-      top.appendChild(pinButton(libraryPinKey(lib.id), 'bibliotekę ' + lib.name, render));
-      top.appendChild(manage);
-      card.appendChild(top);card.appendChild(actions);root.appendChild(card);
+      var top = node('div', 'assets-card-top'); top.appendChild(head); top.appendChild(manage);
+      card.appendChild(top); card.appendChild(actions);
+      card.appendChild(pinButton(libraryPinKey(lib.id), 'bibliotekę ' + lib.name, render)); root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
     section('assetsFavorites', 'ULUBIONE', files.filter(function (f) {return f.favorite;}), false);
@@ -895,7 +894,6 @@
   byId('assetsAdd').addEventListener('click', function () {openHelper({type: 'add'});});
   byId('assetsSearch').addEventListener('click', showLibraries);
   byId('assetsSave').addEventListener('click', showSaveForm);
-  byId('assetsSaveHere').addEventListener('click', showSaveForm);
   byId('assetsSaveConfirm').addEventListener('click', confirmSave);
   byId('assetsSaveLibrary').addEventListener('change', loadSaveFolders);
   byId('assetsQuickToggle').addEventListener('click', function () {
