@@ -9,4 +9,3 @@
 #assetsSavePanel{margin-top:12px}#assetsSavePanel button{text-align:center}
 .assets-card-top{display:flex;align-items:center;gap:7px}.assets-card-top .assets-card-head{flex:1;min-width:0}.assets-manage{width:36px;flex:none;padding:7px 0;text-align:center;font-size:18px;line-height:1}.assets-folder-entry{text-align:left;padding:10px 12px;overflow-wrap:anywhere}#assetsFolderList{margin-top:9px}#assetsTileGrid:empty{display:none}#assetsSaveFolders{max-height:210px;overflow:auto}#assetsSaveFolders button{text-align:left}#assetsQuickToggle{width:100%;text-align:left;margin-top:12px}
 .assets-scan-progress{display:block;width:100%;height:16px;accent-color:var(--accent);margin:12px 0}
-.assets-folder-drop{border:1px dashed #686cff;border-radius:10px;padding:18px 12px;text-align:center;color:#c7c9ff;background:#686cff12;font-size:11px;font-weight:800;letter-spacing:.3px}.assets-folder-drop.over{background:#686cff35;border-style:solid;color:#fff}

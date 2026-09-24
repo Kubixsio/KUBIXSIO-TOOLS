@@ -85,7 +85,7 @@
   function add() {
     screen('DODAJ FOLDER');
     content.appendChild(node('p', 'Wybierz folder na dysku lub pendrivie. Dostęp jest tylko do odczytu.', 'assets-muted'));
-    content.appendChild(node('p', 'Folder ukryty (np. AppData / Modrinth): jeżeli Edge odrzuca go jako systemowy, przeciągnij dokładnie folder Screenshots z Eksploratora na pole poniżej.', 'assets-muted'));
+    content.appendChild(node('p', 'Edge nie udostępnia stronom chronionych folderów systemowych, m.in. części AppData. Jeśli odrzuca folder Screenshots, skopiuj albo synchronizuj go do zwykłego folderu i dodaj ten folder.', 'assets-muted'));
     async function nameFolder(handle) {
       screen('NAZWIJ BIBLIOTEKĘ');
       content.appendChild(node('div', '📁 ' + handle.name, 'assets-title'));
@@ -116,20 +116,6 @@
         else error(e);
       }
     }));
-    var drop = node('div', 'PRZECIĄGNIJ FOLDER SCREENSHOTS TUTAJ', 'assets-folder-drop');
-    drop.addEventListener('dragover', function (event) { event.preventDefault(); drop.classList.add('over'); });
-    drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
-    drop.addEventListener('drop', async function (event) {
-      event.preventDefault(); drop.classList.remove('over');
-      try {
-        var item = event.dataTransfer && event.dataTransfer.items && event.dataTransfer.items[0];
-        if (!item || typeof item.getAsFileSystemHandle !== 'function') throw new Error('Edge nie udostępnił przeciągniętego folderu. Użyj najnowszej wersji Edge.');
-        var handle = await item.getAsFileSystemHandle();
-        if (!handle || handle.kind !== 'directory') throw new Error('Przeciągnij folder, a nie pojedynczy plik.');
-        await nameFolder(handle);
-      } catch (e) { error(e); }
-    });
-    content.appendChild(drop);
   }
   async function deliver(lib, handle, path, silent) {
     if (busy) return;
@@ -279,9 +265,9 @@
         } catch (_) { useful = true; }
         if (useful) folders.push(path.concat(folderHandle.name));
       }
-      // Navigation stays light: when there are subfolders, do not generate any
-      // thumbnails yet. Assets are read only after entering a leaf directory.
-      var files = folders.length ? [] : children.filter(function (handle) {
+      // Scan only this directory, but keep its direct files visible even when
+      // it also contains subfolders. Descendants are still loaded on demand.
+      var files = children.filter(function (handle) {
         return handle.kind === 'file' && supported.test(handle.name);
       }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
       var items = [], total = files.length, lastPercent = -1;
@@ -511,7 +497,7 @@
       pending = null;
       await sync();
       label('Asset dodany do Photopea. Obrazy są wstawiane jako Smart Object i automatycznie dopasowywane.');
-      setTimeout(function () { window.close(); }, 800);
+      window.close();
     } catch (e) { error(e); }
   }
   window.addEventListener('message', function (event) {
