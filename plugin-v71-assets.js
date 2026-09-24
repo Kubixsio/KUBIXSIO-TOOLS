@@ -5,10 +5,14 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
+  var PINS_KEY = 'kubixsio-assets-pins-v1';
+  var SORT_KEY = 'kubixsio-assets-sort-v1';
   var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v5';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
+  var pins = {};
+  var sortMode = 'alpha';
   var expandedLibraryId = null;
   var currentLibraryId = null, catalog = [], catalogFolders = [], folderPath = [], savePath = [], saveReturnId = null;
   var catalogComplete = false, catalogId = null, catalogPath = [], savedPlace = '', catalogProgress = '';
@@ -140,6 +144,11 @@
     if (saved && Array.isArray(saved.libraries) && Array.isArray(saved.files)) state = saved;
   } catch (_) {}
   try { favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {}; } catch (_) {}
+  try { pins = JSON.parse(localStorage.getItem(PINS_KEY)) || {}; } catch (_) {}
+  try {
+    var savedSort = localStorage.getItem(SORT_KEY);
+    if (/^(alpha|newest|oldest|frequent)$/.test(savedSort || '')) sortMode = savedSort;
+  } catch (_) {}
   try { var placeValue = localStorage.getItem(PLACE_KEY); savedPlace = placeValue === null ? state.lastLibrary || '' : placeValue || ''; } catch (_) {}
 
   function restoreFavorites(previous) {
@@ -171,6 +180,78 @@
     return el;
   }
   function library(id) { return state.libraries.find(function (item) { return item.id === id; }); }
+  function libraryPinKey(id) { return 'library:' + id; }
+  function folderPinKey(id, path) { return 'folder:' + id + ':' + JSON.stringify(path); }
+  function filePinKey(item) { return 'file:' + item.id; }
+  function pinned(key) { return !!pins[key]; }
+  function savePins() { try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch (_) {} }
+  function togglePin(key, label, rerender) {
+    if (pinned(key)) delete pins[key]; else pins[key] = true;
+    savePins();
+    if (rerender) rerender();
+    message(pinned(key) ? 'Przypięto ' + label + '.' : 'Odpięto ' + label + '.');
+  }
+  function pinButton(key, label, rerender) {
+    var active = pinned(key);
+    var pin = button('📌', function () { togglePin(key, label, rerender); });
+    pin.className = 'assets-pin' + (active ? ' active' : '');
+    pin.title = active ? 'Odepnij' : 'Przypnij';
+    pin.setAttribute('aria-label', (active ? 'Odepnij ' : 'Przypnij ') + label);
+    pin.setAttribute('aria-pressed', String(active));
+    return pin;
+  }
+  function alphaCompare(a, b) { return String(a || '').localeCompare(String(b || ''), 'pl', {sensitivity:'base'}); }
+  function trackedCount(item) {
+    var tracked = state.files.find(function (file) { return file.id === item.id; });
+    return tracked && tracked.count || 0;
+  }
+  function sortFiles(items) {
+    return items.slice().sort(function (a, b) {
+      var byName = alphaCompare(a.name, b.name);
+      if (sortMode === 'frequent') return trackedCount(b) - trackedCount(a) || byName;
+      if (sortMode === 'newest') return (Number(b.modified) || 0) - (Number(a.modified) || 0) || byName;
+      if (sortMode === 'oldest') {
+        var am = Number(a.modified) || 0, bm = Number(b.modified) || 0;
+        if (!am && bm) return 1;
+        if (am && !bm) return -1;
+        return am - bm || byName;
+      }
+      return byName;
+    });
+  }
+  function closeSortMenus() {
+    ['assetsLibrarySortMenu','assetsDirectorySortMenu'].forEach(function (id) { var menu = byId(id); if (menu) menu.classList.add('assets-hidden'); });
+    ['assetsLibrarySortButton','assetsDirectorySortButton'].forEach(function (id) { var control = byId(id); if (control) control.setAttribute('aria-expanded', 'false'); });
+  }
+  function renderSortControls() {
+    document.querySelectorAll('[data-assets-sort]').forEach(function (choice) {
+      var active = choice.getAttribute('data-assets-sort') === sortMode;
+      choice.classList.toggle('active', active);
+      choice.setAttribute('aria-current', active ? 'true' : 'false');
+    });
+  }
+  function setSortMode(mode) {
+    if (!/^(alpha|newest|oldest|frequent)$/.test(mode)) return;
+    sortMode = mode;
+    try { localStorage.setItem(SORT_KEY, sortMode); } catch (_) {}
+    closeSortMenus(); renderSortControls(); render();
+    if (currentLibraryId) renderDirectory();
+  }
+  function setupSortMenu(buttonId, menuId) {
+    var control = byId(buttonId), menu = byId(menuId);
+    control.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var open = menu.classList.contains('assets-hidden');
+      closeSortMenus();
+      menu.classList.toggle('assets-hidden', !open);
+      control.setAttribute('aria-expanded', String(open));
+    });
+    menu.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var choice = event.target.closest('[data-assets-sort]');
+      if (choice) setSortMode(choice.getAttribute('data-assets-sort'));
+    });
+  }
   function openHelper(action) {
     if ((importState || exportState && action.type !== 'save-layer') && action.type !== 'sync') { message('Poczekaj na zakończenie działania Photopea.', true); return; }
     channel = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
@@ -244,6 +325,7 @@
     byId('assetsOverview').classList.add('assets-hidden');
     byId('assetsSavePanel').classList.add('assets-hidden');
     byId('assetsLibraryView').classList.remove('assets-hidden');
+    byId('assetsPinnedFolderList').replaceChildren(); byId('assetsPinnedTileGrid').replaceChildren();
     byId('assetsTileGrid').replaceChildren(); byId('assetsFolderList').replaceChildren();
     openDirectory(folderPath);
   }
@@ -251,7 +333,9 @@
     if (importState || exportState) { message('Poczekaj na zakończenie poprzedniego działania.', true); return; }
     var select = byId('assetsSaveLibrary');
     select.replaceChildren();
-    state.libraries.filter(function (lib) { return lib.enabled; }).forEach(function (lib) {
+    state.libraries.filter(function (lib) { return lib.enabled; }).sort(function (a,b) {
+      return Number(pinned(libraryPinKey(b.id))) - Number(pinned(libraryPinKey(a.id))) || alphaCompare(a.name, b.name);
+    }).forEach(function (lib) {
       var option = node('option', '', lib.name); option.value = lib.id; select.appendChild(option);
     });
     if (currentLibraryId && library(currentLibraryId) && library(currentLibraryId).enabled) select.value = currentLibraryId;
@@ -280,7 +364,9 @@
       savePath.pop(); renderSaveFolders(); requestDirectory(id, savePath);
     }));
     if (!entry || !entry.complete) root.appendChild(node('p', 'assets-muted', entry && entry.progress || 'Wczytuję tylko ten folder…'));
-    childFolders(savePath, entry || {folders:[]}).forEach(function (parts) {
+    childFolders(savePath, entry || {folders:[]}).sort(function (a,b) {
+      return Number(pinned(folderPinKey(id, b))) - Number(pinned(folderPinKey(id, a))) || alphaCompare(a[a.length-1], b[b.length-1]);
+    }).forEach(function (parts) {
       var folder = button('📁 ' + parts[parts.length-1] + ' ›', function () {
         savePath = parts.slice(); renderSaveFolders(); requestDirectory(id, savePath);
       });
@@ -326,8 +412,19 @@
     });
     byId('assetsInfo').classList.remove('assets-hidden');
   }
-  function addTiles(items) {
-    var root = byId('assetsTileGrid');
+  function addFolderRows(items, rootId) {
+    var root = byId(rootId);
+    items.forEach(function (parts) {
+      var name = parts[parts.length - 1], row = node('div', 'assets-folder-row');
+      var entry = button('📁 ' + name + ' ›', function () { openDirectory(parts); });
+      entry.className = 'assets-folder-entry';
+      row.appendChild(entry);
+      row.appendChild(pinButton(folderPinKey(currentLibraryId, parts), 'folder ' + name, renderDirectory));
+      root.appendChild(row);
+    });
+  }
+  function addTiles(items, rootId) {
+    var root = byId(rootId);
     items.forEach(function (item) {
       var tile = node('div', 'assets-tile');
       var open = button('', function () { openHelper({type: 'use-path', id: item.libraryId, path: item.path}); });
@@ -345,23 +442,27 @@
         if (!tracked) { tracked = {id: item.id, name: item.name, libraryId: item.libraryId, path: item.path, count: 0, lastUsed: 0, favorite: false}; state.files.push(tracked); }
         toggleFavorite(tracked); star.textContent = tracked.favorite ? '★' : '☆';
       }); star.className = 'assets-tile-fav'; star.title = 'Ulubione';
-      tools.appendChild(info); tools.appendChild(star);
+      var pin = pinButton(filePinKey(item), 'plik ' + item.name, renderDirectory);
+      tools.appendChild(info); tools.appendChild(star); tools.appendChild(pin);
       tile.appendChild(open); tile.appendChild(tools); root.appendChild(tile);
     });
   }
   function renderDirectory() {
     if (!currentLibraryId || catalogId !== currentLibraryId || !samePath(catalogPath, folderPath)) return;
     try { localStorage.setItem(PATH_KEY, JSON.stringify(folderPath)); } catch (_) {}
-    var lib = library(currentLibraryId), root = byId('assetsFolderList'), tiles = byId('assetsTileGrid');
-    root.replaceChildren(); tiles.replaceChildren();
+    var lib = library(currentLibraryId);
+    ['assetsPinnedFolderList','assetsPinnedTileGrid','assetsFolderList','assetsTileGrid'].forEach(function (id) { byId(id).replaceChildren(); });
     byId('assetsLibraryTitle').textContent = (lib ? lib.name : '') + (folderPath.length ? ' / ' + folderPath.join(' / ') : '');
     var folders = childFolders(folderPath);
-    folders.forEach(function (parts) {
-      var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { openDirectory(parts); });
-      entry.className = 'assets-folder-entry'; root.appendChild(entry);
-    });
-    var files = catalog.filter(function (item) { return samePath(item.path.slice(0,-1), folderPath); });
-    addTiles(files);
+    var pinnedFolders = folders.filter(function (parts) { return pinned(folderPinKey(currentLibraryId, parts)); });
+    var otherFolders = folders.filter(function (parts) { return !pinned(folderPinKey(currentLibraryId, parts)); });
+    var files = sortFiles(catalog.filter(function (item) { return samePath(item.path.slice(0,-1), folderPath); }));
+    var pinnedFiles = files.filter(function (item) { return pinned(filePinKey(item)); });
+    var otherFiles = files.filter(function (item) { return !pinned(filePinKey(item)); });
+    addFolderRows(pinnedFolders, 'assetsPinnedFolderList');
+    addTiles(pinnedFiles, 'assetsPinnedTileGrid');
+    addFolderRows(otherFolders, 'assetsFolderList');
+    addTiles(otherFiles, 'assetsTileGrid');
     byId('assetsCatalogState').textContent = catalogComplete ?
       'Podfoldery: ' + folders.length + ' • Assety: ' + files.length + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : catalogProgress || 'Wczytuję foldery…';
   }
@@ -404,9 +505,12 @@
   function render() {
     var root = byId('assetsLibraryList');
     root.replaceChildren();
+    renderSortControls();
     if (expandedLibraryId && !library(expandedLibraryId)) expandedLibraryId = null;
     if (!state.libraries.length) root.appendChild(node('p', 'assets-muted', 'Nie masz jeszcze dodanych folderów. Użyj „Dodaj folder”.'));
-    state.libraries.forEach(function (lib) {
+    state.libraries.slice().sort(function (a,b) {
+      return Number(pinned(libraryPinKey(b.id))) - Number(pinned(libraryPinKey(a.id))) || alphaCompare(a.name, b.name);
+    }).forEach(function (lib) {
       var card = node('div', 'assets-card' + (!lib.enabled ? ' disabled' : ''));
       var expanded = expandedLibraryId === lib.id;
       var head = button('', function () { openLibrary(lib.id); }, !lib.enabled);
@@ -434,7 +538,9 @@
       actions.appendChild(button('Zmień nazwę', function () { openHelper({type: 'rename', id: lib.id}); }));
       actions.appendChild(button('Usuń', function () { openHelper({type: 'remove', id: lib.id}); }));
       actions.appendChild(node('p', 'assets-muted assets-location-note', '„Wybierz plik” otwiera systemowe okno jako alternatywny sposób wstawienia.'));
-      var top = node('div', 'assets-card-top'); top.appendChild(head); top.appendChild(manage);
+      var top = node('div', 'assets-card-top'); top.appendChild(head);
+      top.appendChild(pinButton(libraryPinKey(lib.id), 'bibliotekę ' + lib.name, render));
+      top.appendChild(manage);
       card.appendChild(top);card.appendChild(actions);root.appendChild(card);
     });
     var files = state.files.filter(function (f) { return library(f.libraryId); });
@@ -797,6 +903,9 @@
     lists.classList.toggle('assets-hidden', !open);
     byId('assetsQuickToggle').setAttribute('aria-expanded', String(open));
   });
+  setupSortMenu('assetsLibrarySortButton', 'assetsLibrarySortMenu');
+  setupSortMenu('assetsDirectorySortButton', 'assetsDirectorySortMenu');
+  document.addEventListener('click', closeSortMenus);
   byId('assetsBack').addEventListener('click', goBack);
   byId('assetsPreviewClose').addEventListener('click', closePreview);
   byId('assetsPreview').addEventListener('click', function (event) { if (event.target === event.currentTarget) closePreview(); });
