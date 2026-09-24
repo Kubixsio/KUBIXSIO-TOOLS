@@ -5,7 +5,7 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
-  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v2';
+  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v3';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
@@ -28,7 +28,7 @@
   function indexDatabase() {
     if (directoryDatabase) return directoryDatabase;
     directoryDatabase = new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-directories-v2', 1);
+      var request = indexedDB.open('kubixsio-assets-directories-v3', 1);
       request.onupgradeneeded = function () { request.result.createObjectStore('directories', {keyPath:'key'}); };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error); };
@@ -62,12 +62,12 @@
   }
   function storedDirectory(key) {
     return indexAction('get', key).then(function (record) {
-      return record && record.complete === true && record.version === 2 && Array.isArray(record.path) &&
+      return record && record.complete === true && record.version === 3 && Array.isArray(record.path) &&
         Array.isArray(record.folders) && Array.isArray(record.items) ? record : null;
     });
   }
   async function persistDirectory(entry) {
-    var record = {key:entry.key, id:entry.id, path:entry.path, version:2, complete:true, folders:entry.folders, items:entry.items};
+    var record = {key:entry.key, id:entry.id, path:entry.path, version:3, complete:true, folders:entry.folders, items:entry.items};
     try { await indexAction('put', record); return true; }
     catch (_) {
       await indexAction('put', Object.assign({}, record, {items:entry.items.map(function (item) { return Object.assign({}, item, {preview:null}); })}));
@@ -356,19 +356,10 @@
       var entry = button('📁 ' + parts[parts.length-1] + ' ›', function () { openDirectory(parts); });
       entry.className = 'assets-folder-entry'; root.appendChild(entry);
     });
-    // When a directory contains both subfolders and files, keep its files reachable
-    // through a separate entry while keeping the folder list compact.
     var files = catalog.filter(function (item) { return samePath(item.path.slice(0,-1), folderPath); });
-    if (!folders.length) addTiles(files);
-    else if (files.length) {
-      root.appendChild(button('Obrazy w tym folderze (' + files.length + ') ›', function () {
-        root.replaceChildren();
-        root.appendChild(button('← Podfoldery', renderDirectory));
-        tiles.replaceChildren(); addTiles(files);
-      }));
-    }
+    addTiles(files);
     byId('assetsCatalogState').textContent = catalogComplete ?
-      (folders.length ? 'Podfoldery: ' + folders.length : 'Assety: ' + files.length) + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : catalogProgress || 'Wczytuję foldery…';
+      'Podfoldery: ' + folders.length + ' • Assety: ' + files.length + (folders.length || files.length ? '' : ' • Brak obsługiwanych plików w tym folderze.') : catalogProgress || 'Wczytuję foldery…';
   }
   function toggleFavorite(file) {
     file.favorite = !file.favorite;
@@ -446,7 +437,23 @@
     section('assetsRecent', 'OSTATNIO UŻYWANE', files.filter(function (f) { return f.lastUsed; }).sort(function (a,b) {return b.lastUsed-a.lastUsed;}).slice(0,5), false);
     section('assetsFrequent', 'NAJCZĘŚCIEJ UŻYWANE', files.filter(function (f) {return f.count > 0 && !f.favorite;}).sort(function (a,b) {return b.count-a.count;}).slice(0,3), true);
   }
-  function fail(reason) { importState = null; setStatus('ASSETS: ' + reason, 'err'); message(reason, true); sendToHelper({type: 'import-result', ok: false, reason: reason}); }
+  function fail(reason) {
+    if (importState && importState.timer) clearTimeout(importState.timer);
+    if (importState && (importState.stage === 'placing' || importState.stage === 'scaling' || importState.stage === 'centering')) {
+      postScript('try{var target=window.ktxAssetsTarget,source=window.ktxAssetsImportSource;window.ktxAssetsTarget=null;window.ktxAssetsTargetCount=null;window.ktxAssetsImportSource=null;window.ktxAssetsImportDims=null;try{if(source&&source!==target)source.close(SaveOptions.DONOTSAVECHANGES)}catch(_){}try{if(target)app.activeDocument=target}catch(_){}}catch(_){}');
+    }
+    importState = null;
+    setStatus('ASSETS: ' + reason, 'err');
+    message(reason, true);
+    sendToHelper({type: 'import-result', ok: false, reason: reason});
+  }
+  function armImportTimeout(stage, reason) {
+    if (!importState || importState.stage !== stage) return;
+    if (importState.timer) clearTimeout(importState.timer);
+    importState.timer = setTimeout(function () {
+      if (importState && importState.stage === stage) fail(reason);
+    }, 30000);
+  }
   function beginImport(payload) {
     if (importState) { message('Trwa już wstawianie assetu.', true); return; }
     if (vignetteStage !== 'idle' || watermarkStage !== 'idle' || window.folderizeBusy) {
@@ -464,7 +471,7 @@
     }
     setStatus('ASSETS: sprawdzam otwarty projekt…', 'busy');
     var id = JSON.stringify(importState.id);
-    postScript('try{var d=app.activeDocument;if(!d)throw new Error("Otwórz projekt przed wstawieniem assetu");window.ktxAssetsTarget={doc:d,count:app.documents.length};app.echoToOE("KTX_ASSET_TARGET|"+' + id + ')}catch(e){app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    postScript('try{var d=app.activeDocument;if(!d)throw new Error("Otwórz projekt przed wstawieniem assetu");window.ktxAssetsTarget=d;window.ktxAssetsTargetCount=app.documents.length;window.ktxAssetsImportSource=null;window.ktxAssetsImportDims="";app.echoToOE("KTX_ASSET_TARGET|"+' + id + ')}catch(e){app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
   }
   function sendBuffer() {
     if (importState && importState.openAsDocument && importState.stage === 'openingDocument') {
@@ -482,12 +489,39 @@
   }
   function finishImport() {
     if (!importState || importState.stage !== 'opening') return;
-    importState.stage = 'finishing';
+    importState.stage = 'placing'; importState.stepAck = false; importState.stepDone = false;
     var id = JSON.stringify(importState.id), name = JSON.stringify(importState.name);
     setStatus('ASSETS: umieszczam Smart Object…', 'busy');
-    postScript('var source=null,target=null;try{var s=window.ktxAssetsTarget;if(!s||!s.doc)throw new Error("Zgubiono dokument docelowy");if(app.documents.length!==s.count+1)throw new Error("Zmieniono liczbę otwartych dokumentów");target=s.doc;var found=false;for(var i=0;i<app.documents.length;i++)if(app.documents[i]===target)found=true;if(!found)throw new Error("Dokument docelowy został zamknięty");source=app.activeDocument;if(source===target)throw new Error("Nie znaleziono pliku źródłowego");var w=Number(source.width),h=Number(source.height);if(!source.activeLayer)throw new Error("Plik nie zawiera warstwy");executeAction(stringIDToTypeID("newPlacedLayer"));var smart=source.activeLayer;var placed=smart.duplicate(target,ElementPlacement.PLACEATBEGINNING);source.close(SaveOptions.DONOTSAVECHANGES);source=null;app.activeDocument=target;if(!placed)placed=target.activeLayer;placed.name=' + name + ';function px(v){try{return v.as("px")}catch(e){}try{return v.value}catch(e){}return Number(v)}var b=placed.bounds,lw=px(b[2])-px(b[0]),lh=px(b[3])-px(b[1]),dw=px(target.width),dh=px(target.height);if(lw>0&&lh>0&&dw>0&&dh>0){var scale=Math.min(100,(dw/lw)*100,(dh/lh)*100);if(scale<99.999)placed.resize(scale,scale,AnchorPosition.MIDDLECENTER);b=placed.bounds;var cx=(px(b[0])+px(b[2]))/2,cy=(px(b[1])+px(b[3]))/2;placed.translate(dw/2-cx,dh/2-cy)}target.activeLayer=placed;window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_OK|"+' + id + '+"|"+w+"x"+h)}catch(e){try{if(source&&source!==target)source.close(SaveOptions.DONOTSAVECHANGES)}catch(_){}try{if(target)app.activeDocument=target}catch(_){}window.ktxAssetsTarget=null;app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    postScript('var source=null,target=null;try{target=window.ktxAssetsTarget;if(!target)throw new Error("Zgubiono dokument docelowy");if(app.documents.length!==window.ktxAssetsTargetCount+1)throw new Error("Zmieniono liczbę otwartych dokumentów");var found=false;for(var i=0;i<app.documents.length;i++)if(app.documents[i]===target)found=true;if(!found)throw new Error("Dokument docelowy został zamknięty");source=app.activeDocument;if(source===target)throw new Error("Nie znaleziono pliku źródłowego");var w=source.width*1,h=source.height*1;if(!source.activeLayer)throw new Error("Plik nie zawiera warstwy");executeAction(stringIDToTypeID("newPlacedLayer"));var placed=source.activeLayer.duplicate(target,ElementPlacement.PLACEATBEGINNING);placed.name=' + name + ';window.ktxAssetsImportSource=source;window.ktxAssetsImportDims=w+"x"+h;app.activeDocument=target;app.echoToOE("KTX_ASSET_PLACED|"+' + id + ')}catch(e){try{if(source&&source!==target)source.close(SaveOptions.DONOTSAVECHANGES)}catch(_){}try{if(target)app.activeDocument=target}catch(_){}window.ktxAssetsTarget=null;window.ktxAssetsTargetCount=null;window.ktxAssetsImportSource=null;window.ktxAssetsImportDims=null;app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    armImportTimeout('placing', 'Photopea nie zakończyła wstawiania warstwy.');
   }
-  function exportSelectedLayer(id) {
+  function startImportScale() {
+    if (!importState || importState.stage !== 'placing' || !importState.stepAck || !importState.stepDone) return;
+    if (importState.timer) clearTimeout(importState.timer);
+    importState.stage = 'scaling'; importState.stepAck = false; importState.stepDone = false; importState.timer = null;
+    var id = JSON.stringify(importState.id);
+    setStatus('ASSETS: dopasowuję Smart Object do projektu…', 'busy');
+    postScript('try{var target=window.ktxAssetsTarget,source=window.ktxAssetsImportSource;if(!target||!source)throw new Error("Brak przygotowanego assetu");app.activeDocument=target;var placed=target.activeLayer,b=placed.bounds,lw=b[2]-b[0],lh=b[3]-b[1],dw=target.width*1,dh=target.height*1;if(!(lw>0&&lh>0&&dw>0&&dh>0))throw new Error("Nie udało się odczytać wymiarów assetu");var scale=Math.min(100,(dw/lw)*100,(dh/lh)*100);if(scale<99.999)placed.resize(scale,scale,AnchorPosition.MIDDLECENTER);app.echoToOE("KTX_ASSET_SCALED|"+' + id + ')}catch(e){app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    armImportTimeout('scaling', 'Photopea nie zakończyła skalowania assetu.');
+  }
+  function startImportCenter() {
+    if (!importState || importState.stage !== 'scaling' || !importState.stepAck || !importState.stepDone) return;
+    if (importState.timer) clearTimeout(importState.timer);
+    importState.stage = 'centering'; importState.stepAck = false; importState.stepDone = false; importState.timer = null;
+    var id = JSON.stringify(importState.id);
+    setStatus('ASSETS: centruję asset…', 'busy');
+    postScript('try{var target=window.ktxAssetsTarget,source=window.ktxAssetsImportSource,dims=window.ktxAssetsImportDims;if(!target||!source)throw new Error("Brak przygotowanego assetu");app.activeDocument=target;var placed=target.activeLayer,b=placed.bounds,dw=target.width*1,dh=target.height*1,cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;placed.translate(dw/2-cx,dh/2-cy);window.ktxAssetsTarget=null;window.ktxAssetsTargetCount=null;window.ktxAssetsImportSource=null;window.ktxAssetsImportDims=null;source.close(SaveOptions.DONOTSAVECHANGES);app.activeDocument=target;app.echoToOE("KTX_ASSET_OK|"+' + id + '+"|"+dims)}catch(e){app.echoToOE("KTX_ASSET_ERR|"+' + id + '+"|"+e.toString())}');
+    armImportTimeout('centering', 'Photopea nie zakończyła centrowania assetu.');
+  }
+  function completeImport() {
+    if (!importState || importState.stage !== 'centering' || !importState.stepAck || !importState.stepDone) return;
+    if (importState.timer) clearTimeout(importState.timer);
+    var success = importState;
+    importState = null;
+    setStatus('Dodano ' + success.name + ' jako Smart Object (' + success.dims + ').', '');
+    sendToHelper({type: 'import-result', ok: true});
+  }
+  function createExportDocument(id) {
     var source = null, temporary = null;
     try {
       source = app.activeDocument;
@@ -495,59 +529,102 @@
       var selected = source.activeLayer;
       if (!selected) throw new Error('Zaznacz warstwę do zapisania.');
       if (!selected.visible) throw new Error('Zaznaczona warstwa jest ukryta.');
-      var w = Number(source.width), h = Number(source.height);
+      var w = source.width * 1, h = source.height * 1;
       if (!(w > 0 && h > 0)) throw new Error('Nie udało się odczytać wymiarów dokumentu.');
       temporary = app.documents.add(w, h, 72, 'KUBIXSIO ASSET', NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
-      var starter = temporary.activeLayer;
-      // Register the temporary document immediately, so every failure path can close it.
-      window.ktxAssetsExport = {id:id, source:source, temporary:temporary};
-      selected.duplicate(temporary, ElementPlacement.PLACEATBEGINNING);
-      app.activeDocument = temporary;
-      // Remove only the exact empty layer created with the temporary document.
-      if (starter && temporary.layers.length > 1) try { starter.remove(); } catch (_) {}
-      try { temporary.trim(TrimType.TRANSPARENT, true, true, true, true); } catch (_) {}
-      app.echoToOE('KTX_ASSET_PREPARED|' + id);
+      window.ktxAssetsExportId = id;
+      window.ktxAssetsExportSource = source;
+      window.ktxAssetsExportTemporary = temporary;
+      app.echoToOE('KTX_ASSET_EXPORT_CREATED|' + id);
     } catch (e) {
-      window.ktxAssetsExport = null;
+      window.ktxAssetsExportId = null;
+      window.ktxAssetsExportSource = null;
+      window.ktxAssetsExportTemporary = null;
       if (temporary) try { temporary.close(SaveOptions.DONOTSAVECHANGES); } catch (_) {}
       if (source) try { app.activeDocument = source; } catch (_) {}
       app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString());
     }
   }
+  function duplicateExportLayer(id) {
+    try {
+      var source = window.ktxAssetsExportSource, temporary = window.ktxAssetsExportTemporary;
+      if (window.ktxAssetsExportId !== id || !source || !temporary) throw new Error('Nie znaleziono dokumentu do eksportu.');
+      app.activeDocument = source;
+      var selected = source.activeLayer;
+      if (!selected) throw new Error('Zaznacz warstwę do zapisania.');
+      selected.duplicate(temporary, ElementPlacement.PLACEATBEGINNING);
+      app.activeDocument = temporary;
+      app.echoToOE('KTX_ASSET_EXPORT_DUPLICATED|' + id);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+  }
+  function prepareExportLayer(id) {
+    try {
+      var temporary = window.ktxAssetsExportTemporary;
+      if (window.ktxAssetsExportId !== id || !temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      app.activeDocument = temporary;
+      if (temporary.layers.length > 1) temporary.layers[temporary.layers.length - 1].remove();
+      temporary.trim(TrimType.TRANSPARENT, true, true, true, true);
+      app.echoToOE('KTX_ASSET_PREPARED|' + id);
+    } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
+  }
   function savePreparedLayer(id) {
     try {
-      var job = window.ktxAssetsExport;
-      if (!job || job.id !== id || !job.temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
-      app.activeDocument = job.temporary;
-      job.temporary.saveToOE('png');
+      var temporary = window.ktxAssetsExportTemporary;
+      if (window.ktxAssetsExportId !== id || !temporary) throw new Error('Nie znaleziono przygotowanej warstwy.');
+      app.activeDocument = temporary;
+      temporary.saveToOE('png');
     } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
   }
   function closePreparedLayer(id) {
     try {
-      var job = window.ktxAssetsExport;
-      if (job && job.id === id) {
-        window.ktxAssetsExport = null;
-        try { job.temporary.close(SaveOptions.DONOTSAVECHANGES); }
-        finally { app.activeDocument = job.source; }
+      if (window.ktxAssetsExportId === id) {
+        var source = window.ktxAssetsExportSource, temporary = window.ktxAssetsExportTemporary;
+        window.ktxAssetsExportId = null;
+        window.ktxAssetsExportSource = null;
+        window.ktxAssetsExportTemporary = null;
+        try { if (temporary) temporary.close(SaveOptions.DONOTSAVECHANGES); }
+        finally { if (source) app.activeDocument = source; }
       }
       app.echoToOE('KTX_ASSET_CLOSED|' + id);
     } catch (e) { app.echoToOE('KTX_ASSET_EXPORT_ERR|' + id + '|' + e.toString()); }
   }
+  function armExportTimeout(stage, reason, delay) {
+    if (!exportState || exportState.stage !== stage) return;
+    if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.timer = setTimeout(function () {
+      if (exportState && exportState.stage === stage) failExport(reason);
+    }, delay || 30000);
+  }
   function startExport(data) {
     if (!exportState || exportState.stage !== 'permission' || exportState.libraryId !== data.id || exportState.name !== data.name || !samePath(exportState.path, data.path || [])) return;
-    exportState.stage = 'preparing'; exportState.preparedAck = false; exportState.prepareDone = false; exportState.buffer = null;
-    setStatus('ASSETS: przygotowuję zaznaczoną warstwę…', 'busy');
-    postScript('(' + exportSelectedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
-    exportState.timer = setTimeout(function () {
-      if (exportState && exportState.stage === 'preparing') failExport('Photopea nie przygotowała zaznaczonej warstwy.');
-    }, 15000);
+    exportState.stage = 'creating'; exportState.stepAck = false; exportState.stepDone = false; exportState.buffer = null;
+    setStatus('ASSETS: tworzę bezpieczny dokument eksportu…', 'busy');
+    postScript('(' + createExportDocument.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    armExportTimeout('creating', 'Photopea nie utworzyła dokumentu eksportu.');
+  }
+  function startExportDuplicate() {
+    if (!exportState || exportState.stage !== 'creating' || !exportState.stepAck || !exportState.stepDone) return;
+    if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.stage = 'duplicating'; exportState.stepAck = false; exportState.stepDone = false; exportState.timer = null;
+    setStatus('ASSETS: kopiuję zaznaczoną warstwę…', 'busy');
+    postScript('(' + duplicateExportLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    armExportTimeout('duplicating', 'Photopea nie skopiowała zaznaczonej warstwy.');
+  }
+  function startExportPrepare() {
+    if (!exportState || exportState.stage !== 'duplicating' || !exportState.stepAck || !exportState.stepDone) return;
+    if (exportState.timer) clearTimeout(exportState.timer);
+    exportState.stage = 'preparing'; exportState.stepAck = false; exportState.stepDone = false; exportState.timer = null;
+    setStatus('ASSETS: przycinam przezroczysty obszar…', 'busy');
+    postScript('(' + prepareExportLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    armExportTimeout('preparing', 'Photopea nie przygotowała zaznaczonej warstwy.');
   }
   function startPreparedSave() {
-    if (!exportState || exportState.stage !== 'preparing' || !exportState.preparedAck || !exportState.prepareDone) return;
+    if (!exportState || exportState.stage !== 'preparing' || !exportState.stepAck || !exportState.stepDone) return;
     if (exportState.timer) clearTimeout(exportState.timer);
     exportState.stage = 'saving'; exportState.done = false; exportState.buffer = null; exportState.timer = null;
     setStatus('ASSETS: eksportuję PNG zaznaczonej warstwy…', 'busy');
     postScript('(' + savePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    armExportTimeout('saving', 'Photopea nie zwróciła PNG zaznaczonej warstwy.');
   }
   function finishExport() {
     if (!exportState || exportState.stage !== 'saving' || !exportState.buffer || !exportState.done) return;
@@ -555,6 +632,7 @@
     if (exportState.timer) clearTimeout(exportState.timer);
     exportState.timer = null; exportState.ack = false; exportState.cleanupDone = false;
     postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(exportState.id) + ');');
+    armExportTimeout('cleaning', 'Nie udało się zamknąć tymczasowego projektu po eksporcie.', 15000);
   }
   function finishCleanup() {
     if (!exportState || exportState.stage !== 'cleaning' || !exportState.ack || !exportState.cleanupDone || !exportState.buffer) return;
@@ -569,7 +647,7 @@
     var failed = exportState;
     if (failed.timer) clearTimeout(failed.timer);
     exportState = null;
-    if (failed.stage === 'preparing' || failed.stage === 'saving' || failed.stage === 'cleaning')
+    if (failed.stage === 'creating' || failed.stage === 'duplicating' || failed.stage === 'preparing' || failed.stage === 'saving' || failed.stage === 'cleaning')
       postScript('(' + closePreparedLayer.toString() + ')(' + JSON.stringify(failed.id) + ');');
     setStatus('ASSETS: ' + reason, 'err');
     message(reason, true);
@@ -643,29 +721,35 @@
       if (typeof event.data === 'string') {
         var err = 'KTX_ASSET_EXPORT_ERR|' + exportState.id + '|';
         if (event.data.indexOf(err) === 0) { failExport(event.data.substring(err.length)); return; }
+        if (event.data === 'KTX_ASSET_EXPORT_CREATED|' + exportState.id && exportState.stage === 'creating') {
+          exportState.stepAck = true; startExportDuplicate(); return;
+        }
+        if (event.data === 'KTX_ASSET_EXPORT_DUPLICATED|' + exportState.id && exportState.stage === 'duplicating') {
+          exportState.stepAck = true; startExportPrepare(); return;
+        }
         if (event.data === 'KTX_ASSET_PREPARED|' + exportState.id && exportState.stage === 'preparing') {
-          exportState.preparedAck = true; startPreparedSave(); return;
+          exportState.stepAck = true; startPreparedSave(); return;
         }
         if (event.data === 'KTX_ASSET_CLOSED|' + exportState.id && exportState.stage === 'cleaning') {
           exportState.ack = true; finishCleanup(); return;
         }
+        if (event.data === 'done' && exportState.stage === 'creating') {
+          exportState.stepDone = true; startExportDuplicate(); return;
+        }
+        if (event.data === 'done' && exportState.stage === 'duplicating') {
+          exportState.stepDone = true; startExportPrepare(); return;
+        }
         if (event.data === 'done' && exportState.stage === 'preparing') {
-          exportState.prepareDone = true; startPreparedSave(); return;
+          exportState.stepDone = true; startPreparedSave(); return;
         }
         if (event.data === 'done' && exportState.stage === 'saving') {
           exportState.done = true;
           finishExport();
-          if (exportState && exportState.stage === 'saving' && !exportState.timer) exportState.timer = setTimeout(function () {
-            if (exportState && exportState.stage === 'saving') failExport('Photopea nie zwróciła PNG zaznaczonej warstwy.');
-          }, 20000);
           return;
         }
         if (event.data === 'done' && exportState.stage === 'cleaning') {
           exportState.cleanupDone = true;
           finishCleanup();
-          if (exportState && exportState.stage === 'cleaning' && !exportState.timer) exportState.timer = setTimeout(function () {
-            if (exportState && exportState.stage === 'cleaning') failExport('Nie udało się zamknąć tymczasowego projektu po eksporcie.');
-          }, 10000);
           return;
         }
       }
@@ -680,22 +764,22 @@
         setStatus('Otwarto ' + opened.name + ' jako nowy projekt.', '');
         sendToHelper({type: 'import-result', ok: true});
       }
-      else if (importState.stage === 'complete') {
-        var success = importState;
-        importState = null;
-        setStatus('Dodano ' + success.name + ' jako Smart Object (' + success.dims + ').', '');
-        sendToHelper({type: 'import-result', ok: true});
-      } else if (importState.stage === 'error') fail(importState.reason);
+      else if (importState.stage === 'placing') { importState.stepDone = true; startImportScale(); }
+      else if (importState.stage === 'scaling') { importState.stepDone = true; startImportCenter(); }
+      else if (importState.stage === 'centering') { importState.stepDone = true; completeImport(); }
       return;
     }
     var value = event.data, prefix = '|' + importState.id;
     if (value === 'KTX_ASSET_TARGET' + prefix && importState.stage === 'capturing') { importState.ready = true; sendBuffer(); }
-    else if (value.indexOf('KTX_ASSET_OK' + prefix + '|') === 0 && importState.stage === 'finishing') {
+    else if (value === 'KTX_ASSET_PLACED' + prefix && importState.stage === 'placing') {
+      importState.stepAck = true; startImportScale();
+    } else if (value === 'KTX_ASSET_SCALED' + prefix && importState.stage === 'scaling') {
+      importState.stepAck = true; startImportCenter();
+    } else if (value.indexOf('KTX_ASSET_OK' + prefix + '|') === 0 && importState.stage === 'centering') {
       importState.dims = value.substring(('KTX_ASSET_OK' + prefix + '|').length);
-      importState.stage = 'complete';
+      importState.stepAck = true; completeImport();
     } else if (value.indexOf('KTX_ASSET_ERR' + prefix + '|') === 0) {
-      importState.reason = value.substring(('KTX_ASSET_ERR' + prefix + '|').length);
-      importState.stage = 'error';
+      fail(value.substring(('KTX_ASSET_ERR' + prefix + '|').length));
     }
   });
   byId('assetsEntry').addEventListener('click', showAssets);
