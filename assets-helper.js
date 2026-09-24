@@ -179,6 +179,22 @@
     return directory.getFileHandle(path[path.length - 1]);
   }
   var supported = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg|psd|psb|avif|heic|heif|pdf|ai|eps|tga|dds)$/i;
+  var hiddenFolder = /^(System Volume Information|\$RECYCLE\.BIN|tex)$/i;
+  async function containsSupportedAsset(directory, generation) {
+    var nested = [];
+    try {
+      for await (var entry of directory.values()) {
+        if (generation !== scanning) return false;
+        if (entry.kind === 'file' && supported.test(entry.name)) return true;
+        if (entry.kind === 'directory' && !hiddenFolder.test(entry.name)) nested.push(entry);
+      }
+      for (var index = 0; index < nested.length; index++) {
+        if (generation !== scanning) return false;
+        if (await containsSupportedAsset(nested[index], generation)) return true;
+      }
+    } catch (_) { return false; }
+    return false;
+  }
   function imagePreview(file) {
     return new Promise(async function (resolve) {
       var bitmap, image, url;
@@ -251,19 +267,14 @@
       for await (var handle of directory.values()) children.push(handle);
       if (generation !== scanning) return;
       var folderHandles = children.filter(function (handle) {
-        return handle.kind === 'directory' && !/^(System Volume Information|\$RECYCLE\.BIN|tex)$/i.test(handle.name);
+        return handle.kind === 'directory' && !hiddenFolder.test(handle.name);
       }).sort(function (a,b) { return a.name.localeCompare(b.name, 'pl'); });
       var folders = [];
       for (var folderIndex = 0; folderIndex < folderHandles.length; folderIndex++) {
         if (generation !== scanning) return;
-        var folderHandle = folderHandles[folderIndex], useful = false;
-        label('Sprawdzam foldery: ' + (folderIndex + 1) + '/' + folderHandles.length + '…');
-        try {
-          for await (var child of folderHandle.values()) {
-            if (child.kind === 'directory' || child.kind === 'file' && supported.test(child.name)) { useful = true; break; }
-          }
-        } catch (_) { useful = true; }
-        if (useful) folders.push(path.concat(folderHandle.name));
+        var folderHandle = folderHandles[folderIndex];
+        label('Sprawdzam assety w folderach: ' + (folderIndex + 1) + '/' + folderHandles.length + '…');
+        if (await containsSupportedAsset(folderHandle, generation)) folders.push(path.concat(folderHandle.name));
       }
       // Scan only this directory, but keep its direct files visible even when
       // it also contains subfolders. Descendants are still loaded on demand.
