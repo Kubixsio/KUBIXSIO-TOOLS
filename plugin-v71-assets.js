@@ -5,7 +5,7 @@
   var FAVORITES_KEY = 'kubixsio-assets-favorites-v1';
   var PLACE_KEY = 'kubixsio-assets-place-v1';
   var PATH_KEY = 'kubixsio-assets-folder-path-v1';
-  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v4';
+  var DIRECTORY_READY_KEY = 'kubixsio-assets-directories-ready-v5';
   var popup = null, channel = '', command = null, importState = null, exportState = null;
   var state = {libraries: [], files: [], lastLibrary: null};
   var favorites = {};
@@ -28,7 +28,7 @@
   function indexDatabase() {
     if (directoryDatabase) return directoryDatabase;
     directoryDatabase = new Promise(function (resolve, reject) {
-      var request = indexedDB.open('kubixsio-assets-directories-v4', 1);
+      var request = indexedDB.open('kubixsio-assets-directories-v5', 1);
       request.onupgradeneeded = function () { request.result.createObjectStore('directories', {keyPath:'key'}); };
       request.onsuccess = function () { resolve(request.result); };
       request.onerror = function () { reject(request.error); };
@@ -62,12 +62,12 @@
   }
   function storedDirectory(key) {
     return indexAction('get', key).then(function (record) {
-      return record && record.complete === true && record.version === 4 && Array.isArray(record.path) &&
+      return record && record.complete === true && record.version === 5 && Array.isArray(record.path) &&
         Array.isArray(record.folders) && Array.isArray(record.items) ? record : null;
     });
   }
   async function persistDirectory(entry) {
-    var record = {key:entry.key, id:entry.id, path:entry.path, version:4, complete:true, folders:entry.folders, items:entry.items};
+    var record = {key:entry.key, id:entry.id, path:entry.path, version:5, complete:true, folders:entry.folders, items:entry.items};
     try { await indexAction('put', record); return true; }
     catch (_) {
       await indexAction('put', Object.assign({}, record, {items:entry.items.map(function (item) { return Object.assign({}, item, {preview:null}); })}));
