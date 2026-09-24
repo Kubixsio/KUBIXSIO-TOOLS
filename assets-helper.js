@@ -456,6 +456,33 @@
       libraryCard(lib, 'Folder i pliki na dysku pozostały bez zmian.');
     } catch (e) { error(e); }
   }
+  async function renameLibrary(id) {
+    try {
+      var lib = await get('libraries', id);
+      if (!lib) throw new Error('Nie znaleziono biblioteki.');
+      screen('ZMIEŃ NAZWĘ');
+      libraryCard(lib, 'Zmieni się tylko nazwa widoczna w Kubixsio Tools. Nazwa folderu na dysku pozostanie bez zmian.');
+      var input = document.createElement('input');
+      input.className = 'assets-input'; input.value = lib.name; input.maxLength = 60;
+      input.setAttribute('aria-label', 'Nowa nazwa biblioteki');
+      content.appendChild(input);
+      content.appendChild(button('Zapisz nową nazwę', async function () {
+        var name = input.value.trim();
+        if (!name) { label('Podaj nazwę biblioteki.', true); return; }
+        try {
+          lib.name = name;
+          await put('libraries', lib);
+          await sync();
+          screen('NAZWA ZMIENIONA');
+          libraryCard(lib, 'Nowa nazwa została zapisana. Możesz zamknąć to okno.');
+        } catch (e) { error(e); }
+      }));
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') content.querySelector('button').click();
+      });
+      input.focus(); input.select();
+    } catch (e) { error(e); }
+  }
   async function discard(id) {
     try {
       var lib = await get('libraries', id);
@@ -540,6 +567,7 @@
     else if (command.type === 'use') use(command.id);
     else if (command.type === 'refresh') refresh(command.id);
     else if (command.type === 'toggle') toggle(command.id);
+    else if (command.type === 'rename') renameLibrary(command.id);
     else if (command.type === 'remove') discard(command.id);
     else if (command.type === 'sync') window.close();
     else if (command.type === 'browse-path') browsePath(command.id, command.path || []);
