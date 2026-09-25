@@ -6,6 +6,7 @@
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
+<link rel="stylesheet" href="plugin-v92-focus.css?v=92">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -116,12 +117,21 @@
     <p id="assetsMessage" class="assets-message" role="status"></p>
   </div>
   <div class="section">
+    <p class="section-title">FOCUS POINT — TEST PODGLĄDU</p>
+    <div class="focus-test">
+      <button type="button" id="focusCapture">POBIERZ PODGLĄD<span class="hint">Pobiera aktualny obraz dokumentu bez modyfikowania projektu</span></button>
+      <p id="focusStatus" class="focus-status" role="status">Etap 1 — test komunikacji z Photopea.</p>
+      <p id="focusMeta" class="focus-meta"></p>
+      <div id="focusPreview" class="focus-preview" hidden><img id="focusPreviewImage" alt=""></div>
+    </div>
+  </div>
+  <div class="section">
     <p class="section-title">ŚCIĄGA – ŚWIATŁO I CIEŃ</p>
     <img id="guideThumb" class="guide-thumb" src="https://kubixsio.github.io/KUBIXSIO-TOOLS/obrobkaporadnik-hq.webp?v=78" alt="Ściąga światła i cienia" title="Kliknij, aby powiększyć" onclick="openGuideLightbox()">
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v91</div>
+  <div class="footer">KUBIXSIO TOOLS • v92</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -136,6 +146,7 @@
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 <script src="plugin-v35-core.js?v=70"></script>
+<script src="plugin-v92-focus.js?v=92"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
