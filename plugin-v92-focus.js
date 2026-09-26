@@ -26,7 +26,7 @@
   window.ktxSaveToOEGate = gate;
 
   // Stage 2: object locations and relative priorities for the complete image.
-  // Sessions live only in this plugin instance; no analysis history or layers.
+  // Editor sessions remain in memory; analysis history uses its own IndexedDB.
   var stage = document.getElementById('focusStage');
   var overlay = document.getElementById('focusOverlay');
   var editor = document.getElementById('focusEditor');
@@ -328,11 +328,267 @@
   });
   notesInput.addEventListener('input', function () { if (session) session.notes = notesInput.value; });
 
+  var historyStore = window.ktxFocusHistoryStore;
+  var projectControls = document.getElementById('focusProjectControls');
+  var projectSelect = document.getElementById('focusProjectSelect');
+  var projectName = document.getElementById('focusProjectName');
+  var projectCreate = document.getElementById('focusProjectCreate');
+  var projectBind = document.getElementById('focusProjectBind');
+  var projectBinding = document.getElementById('focusProjectBinding');
+  var historyStatus = document.getElementById('focusHistoryStatus');
+  var historyPanel = document.getElementById('focusHistory');
+  var historyList = document.getElementById('focusHistoryList');
+  var historyEmpty = document.getElementById('focusHistoryEmpty');
+  var historyClear = document.getElementById('focusHistoryClear');
+  var historyConfirm = document.getElementById('focusHistoryConfirm');
+  var historyConfirmText = document.getElementById('focusHistoryConfirmText');
+  var historyConfirmDelete = document.getElementById('focusHistoryConfirmDelete');
+  var historyCancelDelete = document.getElementById('focusHistoryCancelDelete');
+  var historyDetail = document.getElementById('focusHistoryDetail');
+  var historyTitle = document.getElementById('focusHistoryTitle');
+  var historySource = document.getElementById('focusHistorySource');
+  var historyImage = document.getElementById('focusHistoryImage');
+  var historyMeta = document.getElementById('focusHistoryMeta');
+  var historyNotes = document.getElementById('focusHistoryNotes');
+  var historyPoints = document.getElementById('focusHistoryPoints');
+  var historySummary = document.getElementById('focusHistorySummary');
+  var historyProgress = document.getElementById('focusHistoryProgress');
+  var historyTasks = document.getElementById('focusHistoryTasks');
+  var includePrevious = document.getElementById('focusIncludePrevious');
+  var projects = [], selectedProjectId = '', historyEntries = [];
+  var storageReady = false, historyBusy = false, activeAnalysisId = null;
+  var openedHistory = null, historyImageUrl = '', pendingDelete = null, historyReadVersion = 0;
+
+  function projectById(id) { return projects.find(function (project) { return project.id === id; }); }
+  function copyJson(value) { return JSON.parse(JSON.stringify(value)); }
+  function storageMessage(message, error) {
+    historyStatus.textContent = message;
+    historyStatus.className = 'focus-status' + (error ? ' error' : '');
+  }
+  function storageError(error) {
+    storageMessage('Nie udało się zapisać lub odczytać historii lokalnej: ' + (error && error.message || 'brak dostępu do IndexedDB') +
+      ' Sprawdź dostęp do danych witryny i wolne miejsce w przeglądarce.', true);
+  }
+  function updateHistoryControls() {
+    projectControls.disabled = !storageReady || historyBusy || !!currentRequest;
+    projectBind.disabled = !session || !selectedProjectId || historyBusy || !!currentRequest;
+    historyClear.disabled = !storageReady || historyBusy || !historyEntries.length || !!currentRequest;
+    historyConfirmDelete.disabled = historyBusy || !!currentRequest;
+    historyCancelDelete.disabled = historyBusy || !!currentRequest;
+    historyList.querySelectorAll('button').forEach(function (button) { button.disabled = historyBusy || !!currentRequest; });
+    historyTasks.querySelectorAll('button').forEach(function (button) { button.disabled = historyBusy || !!currentRequest; });
+    resultTasks.querySelectorAll('button').forEach(function (button) { button.disabled = historyBusy || !!currentRequest; });
+    var bound = session && projectById(session.projectId);
+    projectBinding.textContent = bound ? 'Ten podgląd: ' + bound.name + ' · projekt ' + bound.id.slice(0, 8) +
+      (bound.id !== selectedProjectId ? '. Wybierz ten projekt lub przypisz podgląd do wybranego projektu.' : '') :
+      'Podgląd nie jest przypisany. Wybierz projekt i przypisz go albo rozpocznij nowy projekt.';
+    demoButton.disabled = noChangesButton.disabled = historyBusy || !!currentRequest || !session || !bound || bound.id !== selectedProjectId;
+  }
+  async function historyOperation(action) {
+    if (historyBusy || currentRequest) return;
+    historyBusy = true; updateHistoryControls();
+    try { return await action(); }
+    catch (error) { storageError(error); }
+    finally { historyBusy = false; updateHistoryControls(); }
+  }
+  function closeHistoryDetail() {
+    openedHistory = null;
+    historyDetail.hidden = true;
+    historyTasks.replaceChildren();
+    historyImage.removeAttribute('src'); historyImage.hidden = true;
+    if (historyImageUrl) URL.revokeObjectURL(historyImageUrl);
+    historyImageUrl = '';
+  }
+  function cancelHistoryDelete() { pendingDelete = null; historyConfirm.hidden = true; }
+  function formatDate(value) { return new Date(value).toLocaleString('pl-PL'); }
+  function modeName(mode) { return mode === 'processing' ? 'Tylko obróbka' : 'Obróbka i kompozycja'; }
+  function progressText(result, states) {
+    var done = 0, skipped = 0;
+    result.suggestions.forEach(function (task) { if (states[task.id] === 'done') done++; if (states[task.id] === 'skipped') skipped++; });
+    return 'Do wykonania: ' + (result.suggestions.length - done - skipped) + ' · Wykonane: ' + done + ' · Pominięte: ' + skipped;
+  }
+  function renderHistoryList() {
+    historyList.replaceChildren();
+    historyEmpty.textContent = !selectedProjectId ? 'Wybierz zapisany projekt.' :
+      historyEntries.length ? 'Analizy: ' + historyEntries.length : 'Brak analiz w tym projekcie. Odświeżanie podglądu nie tworzy zapisów.';
+    historyEntries.forEach(function (record) {
+      var row = document.createElement('li'); row.className = 'focus-history-row' + (openedHistory && openedHistory.id === record.id ? ' selected' : '');
+      var openButton = document.createElement('button'); openButton.type = 'button'; openButton.className = 'focus-history-open';
+      openButton.textContent = formatDate(record.createdAt) + ' · ' + modeName(record.analysisMode) + '\n' +
+        (record.result.status === 'no_changes' ? 'Brak koniecznych poprawek' : progressText(record.result, record.taskStates)) +
+        (record.source === 'demo' ? '\nDane przykładowe' : '');
+      openButton.setAttribute('aria-label', 'Otwórz analizę ' + record.id.slice(0, 8));
+      openButton.addEventListener('click', function () { historyOperation(function () { return openHistoryRecord(record.id); }); });
+      var remove = document.createElement('button'); remove.type = 'button'; remove.className = 'focus-history-delete'; remove.textContent = 'Usuń analizę';
+      remove.setAttribute('aria-label', 'Usuń analizę ' + record.id.slice(0, 8));
+      remove.addEventListener('click', function () { requestHistoryDelete(record.id); });
+      row.append(openButton, remove); historyList.appendChild(row);
+    });
+    updateHistoryControls();
+  }
+  async function refreshHistoryList() {
+    var id = selectedProjectId, version = ++historyReadVersion;
+    var records = id ? await historyStore.listAnalyses(id) : [];
+    if (id !== selectedProjectId || version !== historyReadVersion) return;
+    historyEntries = records; renderHistoryList();
+  }
+  function renderProjectOptions() {
+    projectSelect.replaceChildren();
+    var placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Wybierz projekt'; projectSelect.appendChild(placeholder);
+    projects.forEach(function (project) {
+      var option = document.createElement('option'); option.value = project.id;
+      option.textContent = project.name + ' · ' + project.id.slice(0, 8); projectSelect.appendChild(option);
+    });
+    projectSelect.value = selectedProjectId;
+  }
+  function bindSelectedProject() {
+    if (!session || !projectById(selectedProjectId) || currentRequest) return;
+    if (session.projectId !== selectedProjectId) resetAnalysis();
+    session.projectId = selectedProjectId;
+    updateHistoryControls();
+    storageMessage('Podgląd przypisany do projektu. Analiza utworzy nowy zapis lokalny.');
+  }
+  function updateTaskCard(card, state) {
+    card.classList.toggle('focus-task-done', state === 'done');
+    card.classList.toggle('focus-task-skipped', state === 'skipped');
+    card.querySelector('.focus-task-state').textContent = state === 'done' ? 'Wykonane' : state === 'skipped' ? 'Pominięte' : 'Do wykonania';
+    card.querySelector('[data-review-action="done"]').setAttribute('aria-pressed', String(state === 'done'));
+    card.querySelector('[data-review-action="skipped"]').setAttribute('aria-pressed', String(state === 'skipped'));
+  }
+  function syncSavedStates(record) {
+    if (activeAnalysisId === record.id) {
+      reviewStates = Object.assign(Object.create(null), record.taskStates);
+      currentAnalysis.suggestions.forEach(function (task) { var card = resultTasks.querySelector('[data-analysis-task="' + task.id + '"]'); if (card) updateTaskCard(card, reviewStates[task.id]); });
+      updateResultProgress();
+    }
+    if (openedHistory && openedHistory.id === record.id) {
+      openedHistory = record;
+      record.result.suggestions.forEach(function (task) { var card = historyTasks.querySelector('[data-analysis-task="' + task.id + '"]'); if (card) updateTaskCard(card, record.taskStates[task.id]); });
+      historyProgress.textContent = record.result.status === 'suggestions' ? progressText(record.result, record.taskStates) : '';
+    }
+  }
+  async function updateSavedTask(record, taskId, state) {
+    var next = record.taskStates[taskId] === state ? 'pending' : state;
+    await historyOperation(async function () {
+      var saved = await historyStore.setTaskState(record.id, record.projectId, taskId, next);
+      syncSavedStates(saved); await refreshHistoryList(); storageMessage('Stan zalecenia zapisany lokalnie.');
+    });
+  }
+  async function openHistoryRecord(id) {
+    var record = await historyStore.getAnalysis(id);
+    if (!record || record.projectId !== selectedProjectId) throw new Error('Nie znaleziono analizy w wybranym projekcie.');
+    record.result = normalizeAnalysisResult(record.result, record.analysisMode);
+    var image = await historyStore.getImage(record.imageId);
+    if (!image) throw new Error('Nie znaleziono zapisanego obrazu.');
+    closeHistoryDetail(); openedHistory = record; historyDetail.hidden = false; historyPanel.open = true;
+    historyTitle.textContent = record.result.status === 'no_changes' ? 'Brak koniecznych poprawek' : 'ZAPISANA ANALIZA';
+    historySource.textContent = record.source === 'demo' ? 'DANE PRZYKŁADOWE — zapis testu interfejsu.' : 'Zapisany wynik analizy.';
+    historyImageUrl = URL.createObjectURL(image.blob); historyImage.src = historyImageUrl; historyImage.hidden = false;
+    historyMeta.textContent = record.projectName + ' · ' + formatDate(record.createdAt) + '\n' + modeName(record.analysisMode) +
+      ' · zapis ' + image.width + ' × ' + image.height + ' px · oryginał ' + record.document.width + ' × ' + record.document.height + ' px';
+    historyNotes.textContent = 'Moje uwagi: ' + (record.notes || 'Brak'); historyPoints.replaceChildren();
+    record.focusPoints.forEach(function (point) { var item = document.createElement('li');
+      item.textContent = '#' + point.id + ' · ' + point.name + ' — waga ' + point.weight + '\nx: ' + point.rect.x + ', y: ' + point.rect.y + ', szerokość: ' + point.rect.width + ', wysokość: ' + point.rect.height;
+      historyPoints.appendChild(item);
+    });
+    historySummary.textContent = record.result.summary;
+    historyProgress.textContent = record.result.status === 'suggestions' ? progressText(record.result, record.taskStates) : '';
+    record.result.suggestions.forEach(function (task) {
+      historyTasks.appendChild(buildTaskCard(task, record.taskStates, function (taskId, state) { updateSavedTask(openedHistory, taskId, state); }));
+    });
+    renderHistoryList(); storageMessage('Otwarta analiza z historii. Bieżący dokument i oznaczenia pozostają bez zmian.');
+  }
+  function requestHistoryDelete(id) {
+    if (historyBusy || currentRequest || !selectedProjectId) return;
+    pendingDelete = {id: id, projectId: selectedProjectId}; historyConfirm.hidden = false;
+    historyConfirmText.textContent = id ? 'Usunąć tę analizę i jej nieużywaną miniaturkę? Tej operacji nie można cofnąć.' :
+      'Usunąć wszystkie analizy projektu „' + projectById(selectedProjectId).name + '”? Projekt pozostanie na liście. Tej operacji nie można cofnąć.';
+  }
+  async function saveDisplayedAnalysis() {
+    var input = getCurrentAnalysisInput(), result = currentAnalysis, source = analysisSource;
+    if (!input || !input.project) throw new Error('Przypisz podgląd do projektu przed analizą.');
+    var record = {projectId: input.project.id, projectName: input.project.name, createdAt: new Date().toISOString(),
+      document: input.document, focusPoints: input.focusPoints, analysisMode: input.analysisMode, notes: input.notes,
+      result: copyJson(result), source: source, taskStates: Object.assign({}, reviewStates)};
+    var image = await historyStore.resizeImage(input.image, input.document.width, input.document.height);
+    var saved = await historyStore.saveAnalysis(record, image);
+    if (currentAnalysis === result) activeAnalysisId = saved.id;
+    await refreshHistoryList(); storageMessage('Analiza zapisana lokalnie. Pełny obraz pozostaje tylko w bieżącym podglądzie.');
+    return saved;
+  }
+  async function runDemoAnalysis(noChanges) {
+    if (!session || currentRequest || historyBusy || !session.projectId || session.projectId !== selectedProjectId) return;
+    await historyOperation(async function () {
+      showAnalysisResult(createDemoAnalysis(noChanges), capturedMeta.documentKey, 'demo');
+      await saveDisplayedAnalysis();
+    });
+  }
+  function getCurrentAnalysisInput() {
+    if (!session || !capturedBlob || currentRequest) return null;
+    var project = projectById(session.projectId);
+    var metadata = Object.assign({}, capturedMeta, {width: previewImage.naturalWidth, height: previewImage.naturalHeight});
+    return {schemaVersion: 1, image: capturedBlob, document: metadata,
+      project: project ? {id: project.id, name: project.name} : null,
+      coordinateSystem: 'normalized-0-1', analysisMode: session.analysisMode,
+      focusMeaning: 'object-location-in-full-composition', weightMeaning: 'relative-importance',
+      focusPoints: sortedPoints().map(function (point) { return {id: point.id, name: point.name, weight: point.weight, rect: copyRect(point.rect)}; }), notes: session.notes};
+  }
+  async function prepareAnalysisRequest(options) {
+    var input = getCurrentAnalysisInput(); options = options || {};
+    if (!input || !input.project) throw new Error('Pobierz podgląd i przypisz go do projektu.');
+    if (historyBusy) throw new Error('Poczekaj na zakończenie zapisu historii.');
+    var request = {schemaVersion: 1, project: input.project, analysisScope: 'full-thumbnail',
+      coordinateSystem: input.coordinateSystem, focusMeaning: input.focusMeaning, weightMeaning: input.weightMeaning,
+      image: {mimeType: input.image.type, dataUrl: await historyStore.dataUrl(input.image), width: input.document.width,
+        height: input.document.height, resolution: 'original', analysisScope: 'full-thumbnail'},
+      focusPoints: input.focusPoints, analysisMode: input.analysisMode, notes: input.notes, previousAnalysis: null};
+    if (options.includePrevious === true || (options.includePrevious === undefined && includePrevious.checked)) {
+      var record = options.previousAnalysisId ? await historyStore.getAnalysis(options.previousAnalysisId) : (await historyStore.listAnalyses(input.project.id))[0];
+      if (options.previousAnalysisId && !record) throw new Error('Poprzednia analiza nie istnieje.');
+      if (record) {
+        if (record.projectId !== input.project.id) throw new Error('Poprzednia analiza należy do innego projektu.');
+        var image = await historyStore.getImage(record.imageId);
+        if (!image) throw new Error('Brak obrazu poprzedniej analizy.');
+        request.previousAnalysis = {id: record.id, projectId: record.projectId, createdAt: record.createdAt,
+          image: {mimeType: image.mimeType, dataUrl: await historyStore.dataUrl(image.blob), width: image.width, height: image.height,
+            originalWidth: record.document.width, originalHeight: record.document.height, resolution: 'reduced', analysisScope: 'full-thumbnail'},
+          focusPoints: copyJson(record.focusPoints), analysisMode: record.analysisMode, notes: record.notes,
+          result: copyJson(record.result), taskStates: Object.assign({}, record.taskStates)};
+      }
+    }
+    return request;
+  }
+  async function initializeHistory() {
+    try { projects = await historyStore.listProjects(); storageReady = true; renderProjectOptions(); updateHistoryControls(); storageMessage('Historia lokalna gotowa. Wybierz projekt lub rozpocznij nowy.'); }
+    catch (error) { storageError(error); }
+  }
+  projectCreate.addEventListener('click', function () { historyOperation(async function () {
+    var project = await historyStore.createProject(projectName.value); projects = await historyStore.listProjects(); selectedProjectId = project.id;
+    renderProjectOptions(); closeHistoryDetail(); cancelHistoryDelete(); bindSelectedProject(); projectName.value = ''; await refreshHistoryList();
+    storageMessage('Nowy projekt utworzony: ' + project.name + '.');
+  }); });
+  projectSelect.addEventListener('change', function () {
+    selectedProjectId = projectSelect.value; closeHistoryDetail(); cancelHistoryDelete(); includePrevious.checked = false;
+    historyEntries = []; renderHistoryList(); refreshHistoryList().catch(storageError);
+  });
+  projectBind.addEventListener('click', bindSelectedProject);
+  historyClear.addEventListener('click', function () { requestHistoryDelete(null); });
+  historyCancelDelete.addEventListener('click', cancelHistoryDelete);
+  historyConfirmDelete.addEventListener('click', function () { historyOperation(async function () {
+    var target = pendingDelete;
+    if (!target || target.projectId !== selectedProjectId) return;
+    if (target.id) await historyStore.deleteAnalysis(target.id, target.projectId); else await historyStore.clearProject(target.projectId);
+    if (openedHistory && (!target.id || openedHistory.id === target.id)) closeHistoryDetail();
+    if (activeAnalysisId && ((!target.id && session && session.projectId === target.projectId) || activeAnalysisId === target.id)) resetAnalysis();
+    cancelHistoryDelete(); await refreshHistoryList(); storageMessage(target.id ? 'Analiza usunięta lokalnie.' : 'Historia projektu usunięta lokalnie.');
+  }); });
+
   // Result display only. The fixture does not inspect pixels or send scripts.
   function updateAnalysisControls() {
     analysisSettings.hidden = !session;
     analysisSettings.disabled = !!currentRequest || !session;
     resultsPanel.hidden = !session;
+    updateHistoryControls();
   }
   function normalizeAnalysisResult(result, expectedMode) {
     function text(value, field) {
@@ -386,27 +642,19 @@
       ' · Wykonane: ' + done + ' · Pominięte: ' + skipped;
   }
   function setTaskState(taskId, state) {
-    if (currentRequest || !currentAnalysis) return;
+    if (currentRequest || historyBusy || !currentAnalysis) return;
+    if (activeAnalysisId) {
+      updateSavedTask({id: activeAnalysisId, projectId: session.projectId, taskStates: reviewStates}, taskId, state);
+      return;
+    }
     var card = resultTasks.querySelector('[data-analysis-task="' + taskId + '"]');
     if (!card) return;
     state = reviewStates[taskId] === state ? 'pending' : state;
     reviewStates[taskId] = state;
-    card.classList.toggle('focus-task-done', state === 'done');
-    card.classList.toggle('focus-task-skipped', state === 'skipped');
-    card.querySelector('.focus-task-state').textContent = state === 'done' ? 'Wykonane' : state === 'skipped' ? 'Pominięte' : 'Do wykonania';
-    card.querySelector('[data-review-action="done"]').setAttribute('aria-pressed', String(state === 'done'));
-    card.querySelector('[data-review-action="skipped"]').setAttribute('aria-pressed', String(state === 'skipped'));
-    updateResultProgress();
+    updateTaskCard(card, state); updateResultProgress();
+    storageMessage('Stan zmieniony tylko w pamięci — ten wynik nie został zapisany.', true);
   }
-  function renderAnalysisResult() {
-    resultTasks.replaceChildren();
-    resultsTitle.textContent = currentAnalysis && currentAnalysis.status === 'no_changes' ? 'Brak koniecznych poprawek' : 'WYNIK ANALIZY';
-    resultSource.hidden = !currentAnalysis;
-    resultSource.textContent = analysisSource === 'demo' ? 'DANE PRZYKŁADOWE — to test interfejsu, nie ocena tej miniaturki.' : 'Wynik dostarczony do panelu.';
-    resultSummary.textContent = currentAnalysis ? currentAnalysis.summary : 'Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.';
-    resultProgress.hidden = !currentAnalysis || currentAnalysis.status !== 'suggestions';
-    if (!currentAnalysis || currentAnalysis.status === 'no_changes') return;
-    currentAnalysis.suggestions.forEach(function (task) {
+  function buildTaskCard(task, states, onChange) {
       var card = document.createElement('article');
       card.className = 'focus-task';
       card.dataset.analysisTask = task.id;
@@ -447,16 +695,28 @@
         button.dataset.reviewAction = entry[0];
         button.setAttribute('aria-label', entry[2] + task.title);
         button.setAttribute('aria-pressed', 'false');
-        button.addEventListener('click', function () { setTaskState(task.id, entry[0]); });
+        button.addEventListener('click', function () { onChange(task.id, entry[0]); });
         actions.appendChild(button);
       });
       card.appendChild(actions);
-      resultTasks.appendChild(card);
-    });
+      updateTaskCard(card, states[task.id] || 'pending');
+      return card;
+  }
+  function renderAnalysisResult() {
+    resultTasks.replaceChildren();
+    resultsTitle.textContent = currentAnalysis && currentAnalysis.status === 'no_changes' ? 'Brak koniecznych poprawek' : 'WYNIK ANALIZY';
+    resultSource.hidden = !currentAnalysis;
+    resultSource.textContent = analysisSource === 'demo' ? 'DANE PRZYKŁADOWE — to test interfejsu, nie ocena tej miniaturki.' : 'Wynik dostarczony do panelu.';
+    resultSummary.textContent = currentAnalysis ? currentAnalysis.summary : 'Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.';
+    resultProgress.hidden = !currentAnalysis || currentAnalysis.status !== 'suggestions';
+    if (!currentAnalysis || currentAnalysis.status === 'no_changes') return;
+    currentAnalysis.suggestions.forEach(function (task) { resultTasks.appendChild(buildTaskCard(task, reviewStates, setTaskState)); });
     updateResultProgress();
+    updateHistoryControls();
   }
   function resetAnalysis(message) {
     currentAnalysis = null;
+    activeAnalysisId = null;
     analysisSource = '';
     reviewStates = Object.create(null);
     analysisStatus.textContent = message || '';
@@ -469,6 +729,7 @@
     normalized.suggestions.forEach(function (task) {
       if (task.focusPointIds.some(function (id) { return !findPoint(id); })) throw new Error('Wynik wskazuje nieistniejący Focus Point.');
     });
+    activeAnalysisId = null;
     currentAnalysis = normalized;
     analysisSource = source || 'provided';
     reviewStates = Object.create(null);
@@ -525,29 +786,28 @@
     });
   });
   demoButton.addEventListener('click', function () {
-    if (session && !currentRequest) showAnalysisResult(createDemoAnalysis(false), capturedMeta.documentKey, 'demo');
+    runDemoAnalysis(false);
   });
   noChangesButton.addEventListener('click', function () {
-    if (session && !currentRequest) showAnalysisResult(createDemoAnalysis(true), capturedMeta.documentKey, 'demo');
+    runDemoAnalysis(true);
   });
 
   // Prepared input only: a clean, complete PNG plus locations and priorities.
   // No AI call, cropping, layer binding or automatic pixel processing.
-  window.ktxFocusPoint = Object.freeze({getAnalysisInput: function () {
-    if (!session || !capturedBlob || currentRequest) return null;
-    return {schemaVersion: 1, image: capturedBlob, document: Object.assign({}, capturedMeta),
-      coordinateSystem: 'normalized-0-1', analysisMode: session.analysisMode,
-      focusMeaning: 'object-location-in-full-composition', weightMeaning: 'relative-importance',
-      focusPoints: sortedPoints().map(function (point) {
-        return {id: point.id, name: point.name, weight: point.weight, rect: copyRect(point.rect)};
-      }), notes: session.notes};
-  }, showAnalysisResult: function (result, documentKey) {
-    showAnalysisResult(result, documentKey, 'provided');
-  }, getAnalysisResult: function () {
-    return currentAnalysis ? JSON.parse(JSON.stringify(currentAnalysis)) : null;
-  }, getTaskStates: function () {
-    return Object.assign({}, reviewStates);
-  }});
+  window.ktxFocusPoint = Object.freeze({getAnalysisInput: getCurrentAnalysisInput,
+    prepareAnalysisRequest: prepareAnalysisRequest,
+    showAnalysisResult: async function (result, documentKey) {
+      if (historyBusy) throw new Error('Poczekaj na zakończenie zapisu historii.');
+      if (!session || !session.projectId || session.projectId !== selectedProjectId) throw new Error('Przypisz podgląd do wybranego projektu.');
+      showAnalysisResult(result, documentKey, 'provided');
+      historyBusy = true; updateHistoryControls();
+      try { return await saveDisplayedAnalysis(); }
+      catch (error) { storageError(error); throw error; }
+      finally { historyBusy = false; updateHistoryControls(); }
+    }, getAnalysisResult: function () { return currentAnalysis ? copyJson(currentAnalysis) : null; },
+    getTaskStates: function () { return Object.assign({}, reviewStates); }
+  });
+  initializeHistory();
   updateEditorControls();
 
 
