@@ -35,6 +35,20 @@
   var emptyList = document.getElementById('focusEmpty');
   var notesInput = document.getElementById('focusNotes');
   var editorStatus = document.getElementById('focusEditorStatus');
+  var analysisSettings = document.getElementById('focusAnalysisSettings');
+  var analysisModes = analysisSettings.querySelectorAll('input[name="focusAnalysisMode"]');
+  var demoButton = document.getElementById('focusDemoAnalysis');
+  var noChangesButton = document.getElementById('focusDemoNoChanges');
+  var analysisStatus = document.getElementById('focusAnalysisStatus');
+  var resultsPanel = document.getElementById('focusResults');
+  var resultsTitle = document.getElementById('focusResultsTitle');
+  var resultSource = document.getElementById('focusResultSource');
+  var resultSummary = document.getElementById('focusResultSummary');
+  var resultProgress = document.getElementById('focusResultProgress');
+  var resultTasks = document.getElementById('focusResultTasks');
+  var currentAnalysis = null;
+  var analysisSource = '';
+  var reviewStates = Object.create(null);
   var sessions = Object.create(null);
   var session = null;
   var capturedMeta = null;
@@ -59,6 +73,7 @@
     addButton.textContent = drawing ? 'ANULUJ ZAZNACZANIE' : 'DODAJ FOCUS POINT';
     addButton.setAttribute('aria-pressed', String(drawing));
     overlay.classList.toggle('focus-drawing', drawing);
+    updateAnalysisControls();
   }
   function positionBox(box, rect) {
     box.style.left = rect.x * 100 + '%';
@@ -204,13 +219,15 @@
     // Never match by filename, dimensions, thumbnail pixels or tab position.
     // Unknown identity gets a fresh session rather than transferring marks.
     if (!key) key = 'unverified-' + (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random());
-    if (!sessions[key]) sessions[key] = {points: [], nextId: 1, notes: ''};
+    if (!sessions[key]) sessions[key] = {points: [], nextId: 1, notes: '', analysisMode: 'processing'};
     session = sessions[key];
     capturedMeta = {documentKey: key, name: meta.name, width: meta.width, height: meta.height};
     capturedBlob = blob;
     selectedId = null;
     stage.style.maxWidth = (420 * previewImage.naturalWidth / previewImage.naturalHeight) + 'px';
     notesInput.value = session.notes;
+    analysisModes.forEach(function (input) { input.checked = input.value === session.analysisMode; });
+    resetAnalysis();
     editor.hidden = false;
     renderList();
     renderBoxes();
@@ -310,16 +327,226 @@
     }
   });
   notesInput.addEventListener('input', function () { if (session) session.notes = notesInput.value; });
+
+  // Result display only. The fixture does not inspect pixels or send scripts.
+  function updateAnalysisControls() {
+    analysisSettings.hidden = !session;
+    analysisSettings.disabled = !!currentRequest || !session;
+    resultsPanel.hidden = !session;
+  }
+  function normalizeAnalysisResult(result, expectedMode) {
+    function text(value, field) {
+      if (typeof value !== 'string' || !value.trim()) throw new Error('Brak poprawnego pola: ' + field);
+      return value.trim();
+    }
+    if (!result || typeof result !== 'object' || Array.isArray(result) ||
+        result.schemaVersion !== 1 || result.analysisScope !== 'full-thumbnail') {
+      throw new Error('Niepoprawny format wyniku analizy całej miniaturki.');
+    }
+    if (result.mode !== expectedMode || ['processing', 'processing_and_composition'].indexOf(result.mode) === -1) {
+      throw new Error('Wynik nie odpowiada wybranemu zakresowi analizy.');
+    }
+    if (['suggestions', 'no_changes'].indexOf(result.status) === -1 || !Array.isArray(result.suggestions) ||
+        (result.status === 'no_changes' && result.suggestions.length !== 0) ||
+        (result.status === 'suggestions' && result.suggestions.length === 0)) {
+      throw new Error('Niepoprawny status lub lista porad.');
+    }
+    var seen = Object.create(null);
+    var normalized = {schemaVersion: 1, analysisScope: 'full-thumbnail', mode: result.mode,
+      status: result.status, summary: text(result.summary, 'summary'), suggestions: []};
+    normalized.suggestions = result.suggestions.map(function (task) {
+      if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('Niepoprawne zadanie.');
+      var id = text(task.id, 'id');
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id) || seen[id]) throw new Error('Identyfikatory zadań muszą być unikalne.');
+      seen[id] = true;
+      if (['processing', 'composition'].indexOf(task.category) === -1 ||
+          (result.mode === 'processing' && task.category === 'composition')) {
+        throw new Error('Porada wykracza poza wybrany zakres analizy.');
+      }
+      if (!Array.isArray(task.instructions) || !task.instructions.length) throw new Error('Zadanie nie zawiera instrukcji.');
+      var pointIds = task.focusPointIds === undefined ? [] : task.focusPointIds;
+      if (!Array.isArray(pointIds) || pointIds.some(function (id, index) {
+        return !Number.isInteger(id) || id <= 0 || pointIds.indexOf(id) !== index;
+      })) throw new Error('Niepoprawne numery Focus Pointów.');
+      return {id: id, category: task.category, title: text(task.title, 'title'),
+        problem: text(task.problem, 'problem'), reason: text(task.reason, 'reason'),
+        instructions: task.instructions.map(function (step) { return text(step, 'instructions'); }),
+        expectedEffect: text(task.expectedEffect, 'expectedEffect'), focusPointIds: pointIds.slice()};
+    });
+    return normalized;
+  }
+  function updateResultProgress() {
+    if (!currentAnalysis || currentAnalysis.status !== 'suggestions') return;
+    var done = 0, skipped = 0;
+    currentAnalysis.suggestions.forEach(function (task) {
+      if (reviewStates[task.id] === 'done') done++;
+      if (reviewStates[task.id] === 'skipped') skipped++;
+    });
+    resultProgress.textContent = 'Do wykonania: ' + (currentAnalysis.suggestions.length - done - skipped) +
+      ' · Wykonane: ' + done + ' · Pominięte: ' + skipped;
+  }
+  function setTaskState(taskId, state) {
+    if (currentRequest || !currentAnalysis) return;
+    var card = resultTasks.querySelector('[data-analysis-task="' + taskId + '"]');
+    if (!card) return;
+    state = reviewStates[taskId] === state ? 'pending' : state;
+    reviewStates[taskId] = state;
+    card.classList.toggle('focus-task-done', state === 'done');
+    card.classList.toggle('focus-task-skipped', state === 'skipped');
+    card.querySelector('.focus-task-state').textContent = state === 'done' ? 'Wykonane' : state === 'skipped' ? 'Pominięte' : 'Do wykonania';
+    card.querySelector('[data-review-action="done"]').setAttribute('aria-pressed', String(state === 'done'));
+    card.querySelector('[data-review-action="skipped"]').setAttribute('aria-pressed', String(state === 'skipped'));
+    updateResultProgress();
+  }
+  function renderAnalysisResult() {
+    resultTasks.replaceChildren();
+    resultsTitle.textContent = currentAnalysis && currentAnalysis.status === 'no_changes' ? 'Brak koniecznych poprawek' : 'WYNIK ANALIZY';
+    resultSource.hidden = !currentAnalysis;
+    resultSource.textContent = analysisSource === 'demo' ? 'DANE PRZYKŁADOWE — to test interfejsu, nie ocena tej miniaturki.' : 'Wynik dostarczony do panelu.';
+    resultSummary.textContent = currentAnalysis ? currentAnalysis.summary : 'Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.';
+    resultProgress.hidden = !currentAnalysis || currentAnalysis.status !== 'suggestions';
+    if (!currentAnalysis || currentAnalysis.status === 'no_changes') return;
+    currentAnalysis.suggestions.forEach(function (task) {
+      var card = document.createElement('article');
+      card.className = 'focus-task';
+      card.dataset.analysisTask = task.id;
+      var title = document.createElement('h4');
+      title.textContent = task.title;
+      card.appendChild(title);
+      var state = document.createElement('span');
+      state.className = 'focus-task-state';
+      state.textContent = 'Do wykonania';
+      card.appendChild(state);
+      var description = document.createElement('dl');
+      [['Problem', task.problem], ['Dlaczego warto poprawić', task.reason], ['Oczekiwany efekt', task.expectedEffect]].forEach(function (entry) {
+        var term = document.createElement('dt'), detail = document.createElement('dd');
+        term.textContent = entry[0];
+        detail.textContent = entry[1];
+        description.appendChild(term);
+        description.appendChild(detail);
+      });
+      card.appendChild(description);
+      var instructions = document.createElement('details');
+      var summary = document.createElement('summary');
+      summary.textContent = 'Instrukcja w Photopea';
+      instructions.appendChild(summary);
+      var steps = document.createElement('ol');
+      task.instructions.forEach(function (step) {
+        var item = document.createElement('li');
+        item.textContent = step;
+        steps.appendChild(item);
+      });
+      instructions.appendChild(steps);
+      card.appendChild(instructions);
+      var actions = document.createElement('div');
+      actions.className = 'focus-task-actions';
+      [['done', 'Wykonane', 'Oznacz jako wykonane: '], ['skipped', 'Pomiń', 'Pomiń: ']].forEach(function (entry) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = entry[1];
+        button.dataset.reviewAction = entry[0];
+        button.setAttribute('aria-label', entry[2] + task.title);
+        button.setAttribute('aria-pressed', 'false');
+        button.addEventListener('click', function () { setTaskState(task.id, entry[0]); });
+        actions.appendChild(button);
+      });
+      card.appendChild(actions);
+      resultTasks.appendChild(card);
+    });
+    updateResultProgress();
+  }
+  function resetAnalysis(message) {
+    currentAnalysis = null;
+    analysisSource = '';
+    reviewStates = Object.create(null);
+    analysisStatus.textContent = message || '';
+    renderAnalysisResult();
+  }
+  function showAnalysisResult(result, documentKey, source) {
+    if (!session || !capturedMeta || currentRequest) throw new Error('Najpierw pobierz gotowy podgląd.');
+    if (documentKey !== capturedMeta.documentKey) throw new Error('Wynik dotyczy innego dokumentu.');
+    var normalized = normalizeAnalysisResult(result, session.analysisMode);
+    normalized.suggestions.forEach(function (task) {
+      if (task.focusPointIds.some(function (id) { return !findPoint(id); })) throw new Error('Wynik wskazuje nieistniejący Focus Point.');
+    });
+    currentAnalysis = normalized;
+    analysisSource = source || 'provided';
+    reviewStates = Object.create(null);
+    normalized.suggestions.forEach(function (task) { reviewStates[task.id] = 'pending'; });
+    analysisStatus.textContent = '';
+    renderAnalysisResult();
+  }
+  function createDemoAnalysis(noChanges) {
+    var points = sortedPoints();
+    var mainPoint = points[0];
+    var objectName = mainPoint ? mainPoint.name : 'główny obiekt';
+    var focusIds = mainPoint ? [mainPoint.id] : [];
+    var result = {schemaVersion: 1, analysisScope: 'full-thumbnail', mode: session.analysisMode,
+      status: noChanges ? 'no_changes' : 'suggestions',
+      summary: noChanges ? 'Przykładowy wariant wyniku bez zadań. Nie przeprowadzono oceny obrazu.' :
+        'Przykładowe porady pokazują relacje obiektu z otoczeniem. Podane wartości służą do demonstracji i nie wynikają z wag Focus Pointów.',
+      suggestions: []};
+    if (noChanges) return result;
+    result.suggestions.push({id: 'demo-separation', category: 'processing', title: 'Oddziel obiekt od tła: ' + objectName,
+      problem: 'Przykład: tło tuż przy sylwetce ma podobną jasność, przez co kontur obiektu jest mało czytelny.',
+      reason: 'Lokalny kontrast pomiędzy obiektem a otoczeniem ułatwia rozpoznanie go również na małym podglądzie.',
+      instructions: [
+        'W panelu Warstwy wybierz najwyższą warstwę. Wybierz Warstwa → Nowa warstwa dopasowania → Krzywe, aby utworzyć korektę nad całą kompozycją.',
+        'Na krzywej RGB dodaj punkt w środku i przesuń go lekko w dół. Jako testową wartość początkową ustaw Wejście 128 i Wyjście 116.',
+        'Kliknij miniaturę maski warstwy Krzywe. Wybierz Obraz → Dostosowania → Odwróć, aby biała maska stała się czarna i ukryła korektę.',
+        'Wybierz Pędzel (B), kolor biały, twardość 0% i krycie 20%. Maluj na masce wyłącznie w otoczeniu przy konturze obiektu; nie wypełniaj automatycznie całego prostokąta Focus Point.',
+        'Włączaj i wyłączaj widoczność korekty, porównując całą miniaturkę na małym podglądzie. Jeśli zmiana jest za mocna, obniż krycie warstwy Krzywe.'
+      ], expectedEffect: 'Czytelniejszy kontur bez jednakowego przyciemniania całego tła i bez zmiany pozostałych obiektów.', focusPointIds: focusIds});
+    result.suggestions.push({id: 'demo-background-color', category: 'processing', title: 'Uspokój kolor konkurującego fragmentu otoczenia',
+      problem: 'Przykład: mocno nasycony fragment tła odciąga uwagę od najważniejszego obiektu.',
+      reason: 'Spokojniejsze otoczenie pomaga utrzymać zamierzoną hierarchię, zachowując kolorystykę głównego obiektu.',
+      instructions: [
+        'Nad najwyższą warstwą dodaj Warstwa → Nowa warstwa dopasowania → Barwa/Nasycenie. Ustaw Nasycenie na -15 jako wartość testową; pozostaw Barwę i Jasność bez zmian.',
+        'Kliknij miniaturę maski nowej korekty i wybierz Obraz → Dostosowania → Odwróć, aby ukryć ją czarną maską.',
+        'Białym, miękkim Pędzlem (B) o kryciu 20% odsłoń korektę tylko na konkurującym kolorystycznie fragmencie otoczenia. Zachowaj kolor obiektu oraz innych ważnych elementów.',
+        'Porównaj całą miniaturkę przy małym powiększeniu. Dopasuj krycie warstwy tak, aby tło nadal należało do tej samej kompozycji.'
+      ], expectedEffect: 'Mniej rozpraszające otoczenie i czytelniejsza względna ważność obiektów.', focusPointIds: focusIds});
+    if (session.analysisMode === 'processing_and_composition') result.suggestions.push({id: 'demo-composition', category: 'composition', title: 'Zwiększ odstęp między obiektem a krawędzią kadru',
+      problem: 'Przykład: istotny obiekt leży tak blisko krawędzi, że jego sylwetka wygląda na przypadkowo przyciętą.',
+      reason: 'Niewielki margines porządkuje układ całej miniaturki i oddziela bohatera od granicy obrazu.',
+      instructions: [
+        'W panelu Warstwy zaznacz grupę lub wszystkie warstwy tworzące obiekt, wraz z jego efektami. Nie przesuwaj samego prostokąta Focus Point. Jeśli obiekt jest scalony z tłem i nie można go oddzielić, pomiń tę testową poradę.',
+        'Wybierz Przesunięcie (V), wyłącz Autozaznaczenie i przesuń zaznaczone elementy w stronę środka kadru o około 3% szerokości dokumentu (około 38 px dla szerokości 1280 px). Zachowaj obecny rozmiar obiektu.',
+        'Sprawdź cały kadr: odstępy od innych obiektów, położenie cienia i ciągłość tła w miejscu przesunięcia. Cofnij ruch, jeśli zaburzył te relacje.',
+        'Po ręcznej zmianie kliknij ODŚWIEŻ PODGLĄD i dopasuj oznaczenie Focus Point do nowego położenia obiektu.'
+      ], expectedEffect: 'Więcej przestrzeni przy krawędzi bez utraty relacji między bohaterem, innymi obiektami i otoczeniem.', focusPointIds: focusIds});
+    return result;
+  }
+  analysisModes.forEach(function (input) {
+    input.addEventListener('change', function () {
+      if (!input.checked || !session || currentRequest) return;
+      session.analysisMode = input.value;
+      resetAnalysis('Zakres zmieniony. Pokaż przykład dla wybranego trybu.');
+    });
+  });
+  demoButton.addEventListener('click', function () {
+    if (session && !currentRequest) showAnalysisResult(createDemoAnalysis(false), capturedMeta.documentKey, 'demo');
+  });
+  noChangesButton.addEventListener('click', function () {
+    if (session && !currentRequest) showAnalysisResult(createDemoAnalysis(true), capturedMeta.documentKey, 'demo');
+  });
+
   // Prepared input only: a clean, complete PNG plus locations and priorities.
   // No AI call, cropping, layer binding or automatic pixel processing.
   window.ktxFocusPoint = Object.freeze({getAnalysisInput: function () {
     if (!session || !capturedBlob || currentRequest) return null;
     return {schemaVersion: 1, image: capturedBlob, document: Object.assign({}, capturedMeta),
-      coordinateSystem: 'normalized-0-1',
+      coordinateSystem: 'normalized-0-1', analysisMode: session.analysisMode,
       focusMeaning: 'object-location-in-full-composition', weightMeaning: 'relative-importance',
       focusPoints: sortedPoints().map(function (point) {
         return {id: point.id, name: point.name, weight: point.weight, rect: copyRect(point.rect)};
       }), notes: session.notes};
+  }, showAnalysisResult: function (result, documentKey) {
+    showAnalysisResult(result, documentKey, 'provided');
+  }, getAnalysisResult: function () {
+    return currentAnalysis ? JSON.parse(JSON.stringify(currentAnalysis)) : null;
+  }, getTaskStates: function () {
+    return Object.assign({}, reviewStates);
   }});
   updateEditorControls();
 

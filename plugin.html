@@ -6,7 +6,7 @@
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
-<link rel="stylesheet" href="plugin-v92-focus.css?v=96">
+<link rel="stylesheet" href="plugin-v92-focus.css?v=97">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -135,6 +135,23 @@
         <label class="focus-notes-label" for="focusNotes">Moje uwagi (opcjonalnie)</label>
         <textarea id="focusNotes" class="focus-notes" rows="3" placeholder="Co chcesz wyeksponować w tej kompozycji?"></textarea>
       </fieldset>
+      <fieldset id="focusAnalysisSettings" class="focus-analysis-settings" hidden disabled>
+        <legend>ZAKRES ANALIZY</legend>
+        <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing" checked> Tylko obróbka</label>
+        <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing_and_composition"> Obróbka i kompozycja</label>
+        <p class="focus-help">Analiza będzie obejmować całą miniaturkę, wskazane obiekty i ich otoczenie. Głębię sceny możesz opisać w polu „Moje uwagi”.</p>
+        <button type="button" id="focusDemoAnalysis">POKAŻ PRZYKŁADOWĄ ANALIZĘ</button>
+        <button type="button" id="focusDemoNoChanges" class="focus-demo-secondary">TEST: BRAK KONIECZNYCH POPRAWEK</button>
+        <p class="focus-help">To dane testowe, a nie ocena Twojej miniaturki. Żadna zmiana nie jest wykonywana automatycznie.</p>
+        <p id="focusAnalysisStatus" class="focus-status" role="status"></p>
+      </fieldset>
+      <section id="focusResults" class="focus-results" aria-labelledby="focusResultsTitle" hidden>
+        <h3 id="focusResultsTitle">WYNIK ANALIZY</h3>
+        <p id="focusResultSource" class="focus-result-source" hidden></p>
+        <p id="focusResultSummary" class="focus-help">Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.</p>
+        <p id="focusResultProgress" class="focus-status" role="status" hidden></p>
+        <div id="focusResultTasks" class="focus-result-tasks"></div>
+      </section>
     </div>
   </div>
   <div class="section">
@@ -143,7 +160,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v96</div>
+  <div class="footer">KUBIXSIO TOOLS • v97</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -158,7 +175,7 @@
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 <script src="plugin-v35-core.js?v=70"></script>
-<script src="plugin-v92-focus.js?v=96"></script>
+<script src="plugin-v92-focus.js?v=97"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
