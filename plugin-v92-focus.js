@@ -84,26 +84,39 @@
 
   function clearRequest() {
     if (!currentRequest) return;
-    if (currentRequest.timer) clearTimeout(currentRequest.timer);
+    if (currentRequest.timeoutTimer) clearTimeout(currentRequest.timeoutTimer);
+    if (currentRequest.settleTimer) clearTimeout(currentRequest.settleTimer);
+    if (currentRequest.incompleteTimer) clearTimeout(currentRequest.incompleteTimer);
     currentRequest = null;
     lockPanel(false);
     releaseGate('focus');
   }
 
+  function settleRequest(delay) {
+    if (!currentRequest) return;
+    if (currentRequest.timeoutTimer) {
+      clearTimeout(currentRequest.timeoutTimer);
+      currentRequest.timeoutTimer = null;
+    }
+    if (currentRequest.settleTimer) clearTimeout(currentRequest.settleTimer);
+    currentRequest.settleTimer = setTimeout(clearRequest, delay || 0);
+  }
+
   function failCapture(reason) {
-    clearRequest();
     setFocusStatus(reason || 'Nie udało się pobrać podglądu.', 'error');
+    settleRequest(currentRequest && currentRequest.done ? 0 : 350);
   }
 
   function finishCapture() {
-    if (!currentRequest || !currentRequest.done) return;
+    if (!currentRequest) return;
     if (currentRequest.error) {
       failCapture(currentRequest.error);
       return;
     }
-    if (!currentRequest.meta || !currentRequest.buffer) return;
+    if (!currentRequest.meta || !currentRequest.buffer || currentRequest.rendered) return;
 
     var request = currentRequest;
+    request.rendered = true;
     var blob = new Blob([request.buffer], {type: 'image/png'});
     var nextUrl = URL.createObjectURL(blob);
     var previousUrl = currentObjectUrl;
@@ -125,8 +138,11 @@
     previewBox.hidden = false;
     metaLabel.textContent = request.meta.name + ' • ' + request.meta.width + ' × ' + request.meta.height + ' px';
     captureButton.textContent = 'ODŚWIEŻ PODGLĄD';
-    clearRequest();
     setFocusStatus('Podgląd pobrany. Możesz zmienić projekt i odświeżyć go ponownie.', 'ok');
+    // The ArrayBuffer is the actual result. Some Photopea/plugin contexts do
+    // not forward the trailing "done", so it must not be required for success.
+    // Keep the binary gate briefly to consume done when it is delivered.
+    settleRequest(request.done ? 0 : 350);
   }
 
   function arrayBufferFrom(value) {
@@ -153,16 +169,21 @@
     }
 
     var id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random();
-    currentRequest = {id: id, meta: null, buffer: null, error: '', done: false, timer: null};
+    currentRequest = {id: id, meta: null, buffer: null, error: '', done: false, rendered: false,
+      timeoutTimer: null, settleTimer: null, incompleteTimer: null};
     gate.owner = 'focus';
     gate.externalBufferSeen = false;
     gate.externalErrorSeen = false;
     lockPanel(true);
     setFocusStatus('Pobieram aktualny obraz dokumentu…');
 
-    currentRequest.timer = setTimeout(function () {
-      if (currentRequest && currentRequest.id === id) failCapture('Photopea nie zwróciła podglądu w wymaganym czasie.');
-    }, 20000);
+    currentRequest.timeoutTimer = setTimeout(function () {
+      if (!currentRequest || currentRequest.id !== id) return;
+      var reason = currentRequest.meta && !currentRequest.buffer ? 'Odczytano dokument, ale Photopea nie zwróciła obrazu PNG.' :
+        currentRequest.buffer && !currentRequest.meta ? 'Photopea zwróciła obraz, ale nie zwróciła nazwy i wymiarów dokumentu.' :
+        'Photopea nie odpowiedziała na polecenie pobrania podglądu.';
+      failCapture(reason);
+    }, 60000);
 
     var token = JSON.stringify(id);
     var script = '(function(){try{var d=app.activeDocument;if(!d)throw new Error("Brak otwartego dokumentu");' +
@@ -192,6 +213,7 @@
     if (buffer) {
       event.stopImmediatePropagation();
       currentRequest.buffer = buffer;
+      if (!currentRequest.meta) setFocusStatus('Odebrano obraz PNG. Czekam na nazwę i wymiary dokumentu…');
       finishCapture();
       return;
     }
@@ -204,6 +226,7 @@
       event.stopImmediatePropagation();
       try {
         currentRequest.meta = JSON.parse(event.data.substring(metaPrefix.length));
+        if (!currentRequest.buffer) setFocusStatus('Odczytano ' + currentRequest.meta.name + ' • ' + currentRequest.meta.width + ' × ' + currentRequest.meta.height + ' px. Czekam na obraz PNG…');
       } catch (_) {
         currentRequest.error = 'Nie udało się odczytać nazwy i wymiarów dokumentu.';
       }
@@ -219,16 +242,18 @@
     if (event.data === 'done' && (currentRequest.meta || currentRequest.error || currentRequest.buffer)) {
       event.stopImmediatePropagation();
       currentRequest.done = true;
-      if (!currentRequest.error && (!currentRequest.meta || !currentRequest.buffer)) {
-        // Some browsers can deliver the transferred buffer directly after done.
+      if (currentRequest.error || currentRequest.meta && currentRequest.buffer) {
+        finishCapture();
+        settleRequest(0);
+      } else if (!currentRequest.incompleteTimer) {
+        // A transferred buffer can be dispatched directly after done.
         var waitingId = currentRequest.id;
-        setTimeout(function () {
+        currentRequest.incompleteTimer = setTimeout(function () {
           if (currentRequest && currentRequest.id === waitingId && currentRequest.done && (!currentRequest.meta || !currentRequest.buffer)) {
             failCapture('Photopea zakończyła operację, ale nie zwróciła kompletnego podglądu.');
           }
-        }, 750);
+        }, 1500);
       }
-      finishCapture();
     }
   }, true);
 
