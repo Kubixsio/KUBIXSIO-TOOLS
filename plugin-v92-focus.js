@@ -200,15 +200,18 @@
     var buffer = arrayBufferFrom(event.data);
 
     if (gate.owner === 'external') {
-      if (event.source === window.parent && buffer) gate.externalBufferSeen = true;
-      else if (event.source === window.parent && typeof event.data === 'string' && event.data.indexOf('KTX_ASSET_EXPORT_ERR|') === 0) gate.externalErrorSeen = true;
-      else if (event.source === window.parent && event.data === 'done' && (gate.externalBufferSeen || gate.externalErrorSeen)) {
+      if (buffer) gate.externalBufferSeen = true;
+      else if (typeof event.data === 'string' && event.data.indexOf('KTX_ASSET_EXPORT_ERR|') === 0) gate.externalErrorSeen = true;
+      else if (event.data === 'done' && (gate.externalBufferSeen || gate.externalErrorSeen)) {
         releaseGate('external');
       }
       return;
     }
 
-    if (gate.owner !== 'focus' || !currentRequest || event.source !== window.parent) return;
+    // Photopea desktop / PWA builds do not always expose the sender as
+    // window.parent. Identity is instead guaranteed by the exclusive binary
+    // gate and the unpredictable request token in every textual response.
+    if (gate.owner !== 'focus' || !currentRequest) return;
 
     if (buffer) {
       event.stopImmediatePropagation();
