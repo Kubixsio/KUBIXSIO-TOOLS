@@ -85,11 +85,37 @@
   function clearRequest() {
     if (!currentRequest) return;
     if (currentRequest.timeoutTimer) clearTimeout(currentRequest.timeoutTimer);
+    if (currentRequest.nextStepTimer) clearTimeout(currentRequest.nextStepTimer);
     if (currentRequest.settleTimer) clearTimeout(currentRequest.settleTimer);
-    if (currentRequest.incompleteTimer) clearTimeout(currentRequest.incompleteTimer);
     currentRequest = null;
     lockPanel(false);
     releaseGate('focus');
+  }
+
+  function armTimeout(id, delay, message) {
+    if (!currentRequest || currentRequest.id !== id) return;
+    if (currentRequest.timeoutTimer) clearTimeout(currentRequest.timeoutTimer);
+    currentRequest.timeoutTimer = setTimeout(function () {
+      if (!currentRequest || currentRequest.id !== id) return;
+      failCapture(message);
+    }, delay);
+  }
+
+  function sendFocusScript(id, script) {
+    if (!currentRequest || currentRequest.id !== id || gate.owner !== 'focus') return;
+    // The focus request already owns the binary-export gate. Calling the
+    // original sender prevents this internal step from being queued by it.
+    originalPostScript.call(window, script);
+  }
+
+  function scheduleFocusScript(id, script) {
+    if (!currentRequest || currentRequest.id !== id) return;
+    if (currentRequest.nextStepTimer) clearTimeout(currentRequest.nextStepTimer);
+    currentRequest.nextStepTimer = setTimeout(function () {
+      if (!currentRequest || currentRequest.id !== id) return;
+      currentRequest.nextStepTimer = null;
+      sendFocusScript(id, script);
+    }, 0);
   }
 
   function settleRequest(delay) {
@@ -104,7 +130,7 @@
 
   function failCapture(reason) {
     setFocusStatus(reason || 'Nie udało się pobrać podglądu.', 'error');
-    settleRequest(currentRequest && currentRequest.done ? 0 : 350);
+    settleRequest(350);
   }
 
   function finishCapture() {
@@ -139,10 +165,10 @@
     metaLabel.textContent = request.meta.name + ' • ' + request.meta.width + ' × ' + request.meta.height + ' px';
     captureButton.textContent = 'ODŚWIEŻ PODGLĄD';
     setFocusStatus('Podgląd pobrany. Możesz zmienić projekt i odświeżyć go ponownie.', 'ok');
-    // The ArrayBuffer is the actual result. Some Photopea/plugin contexts do
-    // not forward the trailing "done", so it must not be required for success.
-    // Keep the binary gate briefly to consume done when it is delivered.
-    settleRequest(request.done ? 0 : 350);
+    // The ArrayBuffer is the actual result. A trailing "done" is optional and
+    // is consumed during this short grace period so other receivers do not
+    // mistake it for the completion of their own operation.
+    settleRequest(350);
   }
 
   function arrayBufferFrom(value) {
@@ -169,31 +195,19 @@
     }
 
     var id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random();
-    currentRequest = {id: id, meta: null, buffer: null, error: '', done: false, rendered: false,
-      timeoutTimer: null, settleTimer: null, incompleteTimer: null};
+    currentRequest = {id: id, phase: 'ping', meta: null, buffer: null, error: '', rendered: false,
+      timeoutTimer: null, nextStepTimer: null, settleTimer: null};
     gate.owner = 'focus';
     gate.externalBufferSeen = false;
     gate.externalErrorSeen = false;
     lockPanel(true);
-    setFocusStatus('Pobieram aktualny obraz dokumentu…');
-
-    currentRequest.timeoutTimer = setTimeout(function () {
-      if (!currentRequest || currentRequest.id !== id) return;
-      var reason = currentRequest.meta && !currentRequest.buffer ? 'Odczytano dokument, ale Photopea nie zwróciła obrazu PNG.' :
-        currentRequest.buffer && !currentRequest.meta ? 'Photopea zwróciła obraz, ale nie zwróciła nazwy i wymiarów dokumentu.' :
-        'Photopea nie odpowiedziała na polecenie pobrania podglądu.';
-      failCapture(reason);
-    }, 60000);
+    setFocusStatus('Sprawdzam połączenie z Photopea…');
+    armTimeout(id, 10000, 'Photopea nie wykonała nawet testu połączenia z pluginem.');
 
     var token = JSON.stringify(id);
-    var script = '(function(){try{var d=app.activeDocument;if(!d)throw new Error("Brak otwartego dokumentu");' +
-      'function px(v){try{return Math.round(v.as("px"))}catch(e){}try{return Math.round(v.value)}catch(e2){}return Math.round(Number(v))}' +
-      'var m={name:String(d.name||"Bez nazwy"),width:px(d.width),height:px(d.height)};' +
-      'app.echoToOE("KTX_FOCUS_META|"+' + token + '+"|"+JSON.stringify(m));d.saveToOE("png")}' +
-      'catch(e){app.echoToOE("KTX_FOCUS_ERROR|"+' + token + '+"|"+(e&&e.message?e.message:e.toString()))}})();';
-
-    // Bypass the wrapper only for the request which currently owns the gate.
-    originalPostScript(script);
+    // Keep this first command deliberately tiny. If it works, metadata and the
+    // untagged binary export are requested in two separate operations.
+    sendFocusScript(id, 'app.echoToOE("KTX_FOCUS_PING|"+' + token + ');');
   }
 
   window.addEventListener('message', function (event) {
@@ -215,48 +229,64 @@
 
     if (buffer) {
       event.stopImmediatePropagation();
+      if (currentRequest.phase !== 'export') return;
       currentRequest.buffer = buffer;
-      if (!currentRequest.meta) setFocusStatus('Odebrano obraz PNG. Czekam na nazwę i wymiary dokumentu…');
       finishCapture();
       return;
     }
 
     if (typeof event.data !== 'string') return;
+    var pingMessage = 'KTX_FOCUS_PING|' + currentRequest.id;
     var metaPrefix = 'KTX_FOCUS_META|' + currentRequest.id + '|';
     var errorPrefix = 'KTX_FOCUS_ERROR|' + currentRequest.id + '|';
 
-    if (event.data.indexOf(metaPrefix) === 0) {
+    if (event.data === pingMessage && currentRequest.phase === 'ping') {
+      event.stopImmediatePropagation();
+      var pingId = currentRequest.id;
+      var pingToken = JSON.stringify(pingId);
+      currentRequest.phase = 'meta';
+      setFocusStatus('Połączenie działa. Odczytuję nazwę i wymiary dokumentu…');
+      armTimeout(pingId, 10000, 'Połączenie działa, ale Photopea nie zwróciła danych dokumentu.');
+      scheduleFocusScript(pingId,
+        'try{var ktxd=app.activeDocument;if(!ktxd)throw new Error("Brak otwartego dokumentu");' +
+        'var ktxm={name:String(ktxd.name||"Bez nazwy"),width:String(ktxd.width),height:String(ktxd.height)};' +
+        'app.echoToOE("KTX_FOCUS_META|"+' + pingToken + '+"|"+JSON.stringify(ktxm));}' +
+        'catch(ktxe){app.echoToOE("KTX_FOCUS_ERROR|"+' + pingToken + '+"|"+(ktxe&&ktxe.message?ktxe.message:String(ktxe)));}');
+      return;
+    }
+
+    if (event.data.indexOf(metaPrefix) === 0 && currentRequest.phase === 'meta') {
       event.stopImmediatePropagation();
       try {
         currentRequest.meta = JSON.parse(event.data.substring(metaPrefix.length));
-        if (!currentRequest.buffer) setFocusStatus('Odczytano ' + currentRequest.meta.name + ' • ' + currentRequest.meta.width + ' × ' + currentRequest.meta.height + ' px. Czekam na obraz PNG…');
+        currentRequest.meta.width = Math.round(parseFloat(currentRequest.meta.width)) || '?';
+        currentRequest.meta.height = Math.round(parseFloat(currentRequest.meta.height)) || '?';
       } catch (_) {
-        currentRequest.error = 'Nie udało się odczytać nazwy i wymiarów dokumentu.';
+        failCapture('Nie udało się odczytać nazwy i wymiarów dokumentu.');
+        return;
       }
-      finishCapture();
+      var exportId = currentRequest.id;
+      var exportToken = JSON.stringify(exportId);
+      currentRequest.phase = 'export';
+      setFocusStatus('Odczytano ' + currentRequest.meta.name + ' • ' + currentRequest.meta.width + ' × ' + currentRequest.meta.height + ' px. Eksportuję PNG…');
+      armTimeout(exportId, 60000, 'Połączenie działa i dokument został odczytany, ale Photopea nie zwróciła obrazu PNG.');
+      scheduleFocusScript(exportId,
+        'try{var ktxd=app.activeDocument;if(!ktxd)throw new Error("Brak otwartego dokumentu");ktxd.saveToOE("png");}' +
+        'catch(ktxe){app.echoToOE("KTX_FOCUS_ERROR|"+' + exportToken + '+"|"+(ktxe&&ktxe.message?ktxe.message:String(ktxe)));}');
       return;
     }
     if (event.data.indexOf(errorPrefix) === 0) {
       event.stopImmediatePropagation();
-      currentRequest.error = event.data.substring(errorPrefix.length) || 'Nie udało się pobrać dokumentu.';
-      finishCapture();
+      var detail = event.data.substring(errorPrefix.length) || 'Nie udało się pobrać dokumentu.';
+      if (/brak otwartego dokumentu/i.test(detail)) detail = 'Nie masz otwartego dokumentu w Photopea.';
+      failCapture(detail);
       return;
     }
-    if (event.data === 'done' && (currentRequest.meta || currentRequest.error || currentRequest.buffer)) {
+    if (event.data === 'done') {
+      // Every script may emit its own trailing done. The focus protocol moves
+      // between phases only after its tagged messages / ArrayBuffer, never on
+      // an ambiguous done shared by every Photopea operation.
       event.stopImmediatePropagation();
-      currentRequest.done = true;
-      if (currentRequest.error || currentRequest.meta && currentRequest.buffer) {
-        finishCapture();
-        settleRequest(0);
-      } else if (!currentRequest.incompleteTimer) {
-        // A transferred buffer can be dispatched directly after done.
-        var waitingId = currentRequest.id;
-        currentRequest.incompleteTimer = setTimeout(function () {
-          if (currentRequest && currentRequest.id === waitingId && currentRequest.done && (!currentRequest.meta || !currentRequest.buffer)) {
-            failCapture('Photopea zakończyła operację, ale nie zwróciła kompletnego podglądu.');
-          }
-        }, 1500);
-      }
     }
   }, true);
 
