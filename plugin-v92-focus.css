@@ -69,20 +69,3 @@
 .focus-task-done{border-color:var(--ok)}
 .focus-task-done .focus-task-state{color:var(--ok)}
 .focus-task-skipped .focus-task-state{color:#ffd36b}
-.focus-project-controls{display:grid;gap:7px;min-width:0;margin:0;padding:9px;border:1px solid var(--border);border-radius:8px}
-.focus-project-controls legend{font-size:11px;color:#c7ced8;font-weight:800}
-.focus-project-controls label{font-size:11px;color:#c7ced8}
-.focus-project-controls input,.focus-project-controls select{box-sizing:border-box;width:100%;min-width:0;padding:8px;background:#15171b;color:#eef3fa;border:1px solid var(--border);border-radius:5px;font:12px Arial}
-.focus-project-controls input:focus,.focus-project-controls select:focus{outline:2px solid #6de1ff;outline-offset:1px}
-.focus-history{min-width:0;margin-top:8px;padding-top:10px;border-top:1px solid var(--border)}
-.focus-history>summary{color:#c7ced8;font-weight:800;font-size:11px;letter-spacing:.06em;cursor:pointer;margin-bottom:9px}
-.focus-history-list{list-style:none;padding:0;margin:9px 0;display:grid;gap:7px}
-.focus-history-row{display:grid;gap:6px;padding:8px;border:1px solid var(--border);border-radius:7px;min-width:0}
-.focus-history-row.selected{border-color:#6de1ff}
-.focus-test .focus-history-open{text-align:left;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
-.focus-test .focus-history-delete{padding:7px;font-size:11px;color:#ff9f9f}
-.focus-history-image{display:block;width:100%;height:auto;border-radius:7px}
-.focus-history-image[hidden]{display:none}
-.focus-history-confirm{display:grid;gap:7px;padding:9px;margin:8px 0;border:1px solid #ff9f9f;border-radius:7px}
-.focus-history-confirm[hidden]{display:none}
-.focus-history .focus-help{overflow-wrap:anywhere;white-space:pre-wrap}

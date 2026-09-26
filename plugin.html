@@ -6,7 +6,7 @@
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
-<link rel="stylesheet" href="plugin-v92-focus.css?v=98">
+<link rel="stylesheet" href="plugin-v92-focus.css?v=99">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -122,17 +122,6 @@
       <button type="button" id="focusCapture">POBIERZ PODGLĄD<span class="hint">Pobiera aktualny obraz dokumentu bez modyfikowania projektu</span></button>
       <p id="focusStatus" class="focus-status" role="status">Pobierz całą miniaturkę, aby wskazać najważniejsze obiekty.</p>
       <p id="focusMeta" class="focus-meta"></p>
-      <fieldset id="focusProjectControls" class="focus-project-controls" disabled>
-        <legend>PROJEKT FOCUS POINT</legend>
-        <label for="focusProjectSelect">Zapisane projekty</label>
-        <select id="focusProjectSelect"><option value="">Wybierz projekt</option></select>
-        <button type="button" id="focusProjectBind" disabled>PRZYPISZ PODGLĄD DO PROJEKTU</button>
-        <label for="focusProjectName">Nazwa nowego projektu</label>
-        <input id="focusProjectName" type="text" placeholder="Np. Warden — odcinek 12">
-        <button type="button" id="focusProjectCreate">ROZPOCZNIJ NOWY PROJEKT</button>
-        <p id="focusProjectBinding" class="focus-help">Wybór projektu otwiera jego historię. Przypisz podgląd przed uruchomieniem przykładowej analizy.</p>
-      </fieldset>
-      <p id="focusHistoryStatus" class="focus-status" role="status">Otwieram lokalną historię…</p>
       <div id="focusPreview" class="focus-preview" hidden>
         <div id="focusStage" class="focus-stage"><img id="focusPreviewImage" alt="" draggable="false"><div id="focusOverlay" class="focus-overlay" aria-label="Oznaczenia obiektów"></div></div>
       </div>
@@ -151,9 +140,9 @@
         <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing" checked> Tylko obróbka</label>
         <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing_and_composition"> Obróbka i kompozycja</label>
         <p class="focus-help">Analiza będzie obejmować całą miniaturkę, wskazane obiekty i ich otoczenie. Głębię sceny możesz opisać w polu „Moje uwagi”.</p>
-        <label class="focus-mode"><input id="focusIncludePrevious" type="checkbox"> Uwzględnij ostatnią zapisaną analizę projektu</label>
-        <p class="focus-help">Przygotowanie danych do ponownej analizy może uwzględniać wcześniejszy obraz całej miniaturki i stany zaleceń. Dane pozostają lokalnie.</p>
         <button type="button" id="focusDemoAnalysis">POKAŻ PRZYKŁADOWĄ ANALIZĘ</button>
+        <button type="button" id="focusReanalyze" disabled>ANALIZUJ PONOWNIE</button>
+        <p class="focus-help">Ponowna analiza pobiera świeży obraz i zastępuje poprzedni wynik. Teraz wyświetla wynik testowy; AI nie jest podłączone.</p>
         <button type="button" id="focusDemoNoChanges" class="focus-demo-secondary">TEST: BRAK KONIECZNYCH POPRAWEK</button>
         <p class="focus-help">To dane testowe, a nie ocena Twojej miniaturki. Żadna zmiana nie jest wykonywana automatycznie.</p>
         <p id="focusAnalysisStatus" class="focus-status" role="status"></p>
@@ -165,29 +154,6 @@
         <p id="focusResultProgress" class="focus-status" role="status" hidden></p>
         <div id="focusResultTasks" class="focus-result-tasks"></div>
       </section>
-      <details id="focusHistory" class="focus-history">
-        <summary>HISTORIA</summary>
-        <p class="focus-help">Historia wybranego projektu jest przechowywana w tej przeglądarce. Przeglądanie jej nie zmienia dokumentu ani bieżących oznaczeń.</p>
-        <p id="focusHistoryEmpty" class="focus-help">Wybierz zapisany projekt.</p>
-        <ul id="focusHistoryList" class="focus-history-list" aria-label="Zapisane analizy"></ul>
-        <button type="button" id="focusHistoryClear" class="focus-history-delete" disabled>USUŃ CAŁĄ HISTORIĘ PROJEKTU</button>
-        <div id="focusHistoryConfirm" class="focus-history-confirm" hidden>
-          <p id="focusHistoryConfirmText" class="focus-help"></p>
-          <button type="button" id="focusHistoryConfirmDelete">USUŃ ZAPISY</button>
-          <button type="button" id="focusHistoryCancelDelete">ANULUJ</button>
-        </div>
-        <section id="focusHistoryDetail" class="focus-results" aria-label="Otwarta analiza z historii" hidden>
-          <h3 id="focusHistoryTitle"></h3>
-          <p id="focusHistorySource" class="focus-result-source"></p>
-          <img id="focusHistoryImage" class="focus-history-image" alt="Poprzedni obraz całej miniaturki" hidden>
-          <p id="focusHistoryMeta" class="focus-help"></p>
-          <p id="focusHistoryNotes" class="focus-help"></p>
-          <ul id="focusHistoryPoints" class="focus-help"></ul>
-          <p id="focusHistorySummary" class="focus-help"></p>
-          <p id="focusHistoryProgress" class="focus-status" role="status"></p>
-          <div id="focusHistoryTasks" class="focus-result-tasks"></div>
-        </section>
-      </details>
     </div>
   </div>
   <div class="section">
@@ -196,7 +162,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v98</div>
+  <div class="footer">KUBIXSIO TOOLS • v99</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -211,8 +177,7 @@
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 <script src="plugin-v35-core.js?v=70"></script>
-<script src="plugin-v98-focus-history.js?v=98"></script>
-<script src="plugin-v92-focus.js?v=98"></script>
+<script src="plugin-v92-focus.js?v=99"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
