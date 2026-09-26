@@ -37,7 +37,9 @@
   var editorStatus = document.getElementById('focusEditorStatus');
   var analysisSettings = document.getElementById('focusAnalysisSettings');
   var analysisModes = analysisSettings.querySelectorAll('input[name="focusAnalysisMode"]');
-  var demoButton = document.getElementById('focusDemoAnalysis');
+  var analyzeButton = document.getElementById('focusAnalyze');
+  var tokenInput = document.getElementById('focusApiToken');
+  var clearTokenButton = document.getElementById('focusClearToken');
   var noChangesButton = document.getElementById('focusDemoNoChanges');
   var analysisStatus = document.getElementById('focusAnalysisStatus');
   var resultsPanel = document.getElementById('focusResults');
@@ -52,6 +54,10 @@
   var reanalyzeButton = document.getElementById('focusReanalyze');
   var lastAnalysisInput = null, lastAnalyzedAt = '';
   var analysisBusy = false, pendingReanalysis = null, previewRevision = 0;
+  var testApiToken = '', activeAnalysisRequest = null;
+  var ANALYZE_URL = 'https://kubixsio-focus-point.polizaless1.workers.dev/analyze';
+  var MAX_ANALYSIS_BYTES = 16 * 1024 * 1024;
+  var ANALYSIS_TIMEOUT_MS = 45000;
   var session = null;
   var capturedMeta = null;
   var capturedBlob = null;
@@ -381,6 +387,7 @@
     return request;
   }
   function clearDocumentState() {
+    cancelServerAnalysis();
     previewRevision++;
     session = null; capturedMeta = null; capturedBlob = null; selectedId = null;
     notesInput.value = ''; editor.hidden = true; previewBox.hidden = true; metaLabel.textContent = '';
@@ -388,37 +395,132 @@
     currentObjectUrl = ''; previewImage.removeAttribute('src');
     resetAnalysis(); renderList(); renderBoxes(); updateEditorControls();
   }
-  function runDemoAnalysis(noChanges) {
-    if (!session || currentRequest || analysisBusy || pendingReanalysis) return;
-    showAnalysisResult(createDemoAnalysis(noChanges), capturedMeta.documentKey, 'demo');
+  function setAnalysisStatus(message, isError) {
+    analysisStatus.textContent = message;
+    analysisStatus.classList.toggle('error', !!isError);
   }
-  function startReanalysis() {
-    if (!session || !session.identityVerified || !currentAnalysis || !lastAnalysisInput || currentRequest || analysisBusy || pendingReanalysis) return;
-    pendingReanalysis = {documentKey: capturedMeta.documentKey, ready: false};
-    analysisStatus.textContent = 'Pobieram aktualny obraz do ponownej analizy testowej…';
+  function apiError(message) {
+    var error = new Error(message); error.focusApiMessage = message; return error;
+  }
+  function hasTestToken() {
+    if (testApiToken && /^[\x21-\x7e]{1,512}$/.test(testApiToken)) return true;
+    if (testApiToken) {
+      setAnalysisStatus('Nieprawidłowy format tokenu. Wpisz token ASCII bez spacji, taki sam jak sekret TEST_API_TOKEN Workera.', true);
+      tokenInput.focus();
+      return false;
+    }
+    setAnalysisStatus('Wpisz testowy token przed połączeniem z serwerem. Nie zapisujemy go na dysku.', true);
+    tokenInput.focus();
+    return false;
+  }
+  function cancelServerAnalysis() {
+    if (!activeAnalysisRequest) return;
+    activeAnalysisRequest.cancelled = true;
+    activeAnalysisRequest.controller.abort();
+  }
+  function startServerAnalysis(noChanges, requirePrevious) {
+    if (!session || currentRequest || analysisBusy || pendingReanalysis) return;
+    if (requirePrevious && (!session.identityVerified || !currentAnalysis || !lastAnalysisInput)) return;
+    if (!hasTestToken()) return;
+    // Recognized documents use the existing capture path before every POST.
+    // An unverified preview can be tested, but cannot carry a previous image.
+    if (!session.identityVerified) { runServerAnalysis(noChanges, false); return; }
+    pendingReanalysis = {documentKey: capturedMeta.documentKey, ready: false,
+      noChanges: !!noChanges, requirePrevious: !!requirePrevious};
+    setAnalysisStatus('Pobieram aktualny cały obraz przed połączeniem z serwerem testowym…');
     capturePreview();
-    if (!currentRequest) { pendingReanalysis = null; analysisStatus.textContent = 'Nie rozpoczęto ponownej analizy. Poczekaj na zakończenie bieżącego działania.'; }
+    if (!currentRequest) { pendingReanalysis = null; setAnalysisStatus('Nie rozpoczęto analizy. Poczekaj na zakończenie bieżącego działania w Photopea.', true); }
     updateAnalysisControls();
   }
-  async function finishReanalysis() {
+  function startReanalysis() { startServerAnalysis(false, true); }
+  function finishReanalysis() {
     var pending = pendingReanalysis; pendingReanalysis = null;
-    if (!pending || !pending.ready || !capturedMeta || pending.documentKey !== capturedMeta.documentKey || !lastAnalysisInput) return;
-    analysisBusy = true; updateEditorControls();
+    if (!pending || !pending.ready || !capturedMeta || pending.documentKey !== capturedMeta.documentKey) return;
+    runServerAnalysis(pending.noChanges, pending.requirePrevious);
+  }
+  function httpError(response, data) {
+    var code = data && data.error && data.error.code;
+    if (response.status === 401) return apiError('Nieprawidłowy token testowy. Sprawdź go lub wpisz ponownie. Poprzednie porady pozostają.');
+    if (response.status === 403) return apiError('Serwer odrzucił dostęp. Sprawdź ALLOWED_ORIGINS: ' + window.location.origin + '.');
+    if (response.status === 413) return apiError('Żądanie przekracza limit 16 MiB, łącznie z aktualnym i poprzednim obrazem base64. Nic nie zastąpiono.');
+    if (response.status === 400 || response.status === 415 || response.status === 422) return apiError('Serwer odrzucił niepoprawne dane analizy. Odśwież podgląd i sprawdź dodatnie wagi oraz oznaczenia. Poprzednie porady pozostają.');
+    if (response.status === 503 && code === 'AUTH_NOT_CONFIGURED') return apiError('Worker nie ma poprawnie skonfigurowanego sekretu TEST_API_TOKEN. Sprawdź jego ustawienia w Cloudflare.');
+    if (response.status === 503 && code === 'CORS_NOT_CONFIGURED') return apiError('Worker ma niepoprawne ustawienie ALLOWED_ORIGINS. Wymagany origin: ' + window.location.origin + '.');
+    if (response.status >= 500) return apiError('Serwer testowy jest chwilowo niedostępny. Spróbuj ponownie. Poprzednie porady pozostają.');
+    return apiError('Serwer odrzucił żądanie (HTTP ' + response.status + '). Poprzednie porady pozostają.');
+  }
+  async function runServerAnalysis(noChanges, requirePrevious) {
+    if (!session || currentRequest || analysisBusy || !hasTestToken()) return;
+    analysisBusy = true;
+    cancelGesture();
+    var job = {controller: new AbortController(), cancelled: false, timedOut: false};
+    activeAnalysisRequest = job;
+    var timer = null, bearer = testApiToken;
     try {
+      setAnalysisStatus('Przygotowuję cały obraz i dane Focus Point…');
+      var previous = lastAnalysisInput;
+      var canCompare = !!(previous && currentAnalysis && session.identityVerified && previous.document.identityVerified &&
+        previous.document.documentKey === capturedMeta.documentKey);
+      var encodedImageBytes = Math.ceil(capturedBlob.size / 3) * 4 +
+        (canCompare ? Math.ceil(previous.image.size / 3) * 4 : 0);
+      if (encodedImageBytes > MAX_ANALYSIS_BYTES) throw httpError({status: 413});
       var request = await prepareAnalysisRequest();
-      if (!request.comparisonAvailable || !request.previousAnalysis) throw new Error('Brak poprzedniego obrazu właściwego dokumentu.');
-      // Future transport goes here. Today the fixture replaces the one result;
-      // it does not inspect pixels, compare images or contact any service.
-      showAnalysisResult(createDemoAnalysis(false), request.document.documentKey, 'demo');
-      analysisStatus.textContent = 'Wynik testowy zastąpił poprzednią analizę. Przygotowano oba obrazy i stany zaleceń lokalnie; AI nie porównywało obrazów.';
-    } catch (error) { analysisStatus.textContent = 'Nie udało się przygotować ponownej analizy: ' + error.message; }
-    finally { analysisBusy = false; updateEditorControls(); }
+      if (job.cancelled) return;
+      if (requirePrevious && (!request.comparisonAvailable || !request.previousAnalysis)) throw apiError('Brak poprzedniego obrazu właściwego dokumentu. Nie wysłano ponownej analizy.');
+      var body = JSON.stringify(request);
+      if (new Blob([body]).size > MAX_ANALYSIS_BYTES) throw httpError({status: 413});
+      timer = setTimeout(function () { job.timedOut = true; job.controller.abort(); }, ANALYSIS_TIMEOUT_MS);
+      setAnalysisStatus('Wysyłam dane do Workera i czekam na demonstracyjne porady…');
+      var response;
+      try {
+        response = await fetch(ANALYZE_URL + (noChanges ? '?example=no_changes' : ''), {
+          method: 'POST', mode: 'cors', credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + bearer},
+          body: body, signal: job.controller.signal
+        });
+      } catch (_) {
+        if (job.cancelled) return;
+        if (job.timedOut) throw apiError('Serwer nie odpowiedział w ciągu 45 sekund. Spróbuj ponownie. Poprzednie porady pozostają.');
+        throw apiError('Nie udało się połączyć z serwerem. Sprawdź internet i dostępność Workera. Możliwa jest również blokada CORS — ALLOWED_ORIGINS musi zawierać ' + window.location.origin + '. Poprzednie porady pozostają.');
+      }
+      var result;
+      try { result = await response.json(); }
+      catch (_) {
+        if (!response.ok) throw httpError(response);
+        throw apiError(job.timedOut ? 'Upłynął czas odbierania odpowiedzi serwera. Poprzednie porady pozostają.' : 'Serwer zwrócił niepoprawny JSON. Poprzednie porady pozostają.');
+      }
+      if (job.cancelled) return;
+      if (!response.ok) throw httpError(response, result);
+      if (!session || !capturedMeta || currentRequest || request.document.documentKey !== capturedMeta.documentKey ||
+          request.document.previewRevision !== previewRevision || request.analysisMode !== session.analysisMode) {
+        throw apiError('Podgląd lub dokument zmienił się podczas połączenia. Odrzucono nieaktualny wynik.');
+      }
+      // Validate everything before the one current result is replaced.
+      try {
+        var normalized = normalizeAnalysisResult(result, request.analysisMode);
+        normalized.suggestions.forEach(function (task) {
+          if (task.focusPointIds.some(function (id) { return !findPoint(id); })) throw new Error('Unknown point');
+        });
+      } catch (_) { throw apiError('Odpowiedź serwera nie pasuje do formatu poradnika lub bieżących Focus Pointów. Poprzednie porady pozostają.'); }
+      showAnalysisResult(normalized, request.document.documentKey, 'demo');
+      setAnalysisStatus('Odebrano dane demonstracyjne z Workera. To test połączenia, nie analiza AI; obrazy nie zostały ocenione ani porównane.');
+    } catch (error) {
+      if (!job.cancelled) setAnalysisStatus(error.focusApiMessage || 'Nie udało się przygotować danych analizy. Spróbuj ponownie. Poprzednie porady pozostają.', true);
+    } finally {
+      bearer = '';
+      if (timer) clearTimeout(timer);
+      if (activeAnalysisRequest === job) activeAnalysisRequest = null;
+      analysisBusy = false;
+      updateEditorControls();
+    }
   }
   function updateAnalysisControls() {
     analysisSettings.hidden = !session;
     analysisSettings.disabled = !!currentRequest || !session || analysisBusy;
+    analysisSettings.setAttribute('aria-busy', String(!!currentRequest || analysisBusy || !!pendingReanalysis));
     resultsPanel.hidden = !session;
-    demoButton.disabled = noChangesButton.disabled = !!currentRequest || !session || analysisBusy || !!pendingReanalysis;
+    analyzeButton.disabled = noChangesButton.disabled = !!currentRequest || !session || analysisBusy || !!pendingReanalysis;
+    clearTokenButton.disabled = !!currentRequest || analysisBusy || !testApiToken;
     reanalyzeButton.disabled = !!currentRequest || !session || analysisBusy || !!pendingReanalysis || !currentAnalysis ||
       !lastAnalysisInput || !session.identityVerified;
     captureButton.disabled = !!currentRequest || analysisBusy;
@@ -535,9 +637,9 @@
     resultTasks.replaceChildren();
     resultsTitle.textContent = currentAnalysis && currentAnalysis.status === 'no_changes' ? 'Brak koniecznych poprawek' : 'WYNIK ANALIZY';
     resultSource.hidden = !currentAnalysis;
-    resultSource.textContent = (analysisSource === 'demo' ? 'DANE PRZYKŁADOWE — to test interfejsu, nie ocena tej miniaturki.' : 'Wynik dostarczony do panelu.') +
+    resultSource.textContent = (analysisSource === 'demo' ? 'DANE DEMONSTRACYJNE Z WORKERA — test połączenia, bez analizy AI i porównywania obrazów.' : 'Wynik dostarczony do panelu.') +
       (currentAnalysis ? ' Zakres tego wyniku: ' + modeName(currentAnalysis.mode) + '.' : '');
-    resultSummary.textContent = currentAnalysis ? currentAnalysis.summary : 'Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.';
+    resultSummary.textContent = currentAnalysis ? currentAnalysis.summary : 'Tu pojawią się demonstracyjne porady pobrane z serwera po kliknięciu ANALIZUJ.';
     resultProgress.hidden = !currentAnalysis || currentAnalysis.status !== 'suggestions';
     if (!currentAnalysis || currentAnalysis.status === 'no_changes') return;
     currentAnalysis.suggestions.forEach(function (task) { resultTasks.appendChild(buildTaskCard(task, reviewStates, setTaskState)); });
@@ -549,7 +651,7 @@
     lastAnalysisInput = null; lastAnalyzedAt = '';
     analysisSource = '';
     reviewStates = Object.create(null);
-    analysisStatus.textContent = message || '';
+    setAnalysisStatus(message || '');
     renderAnalysisResult();
   }
   function showAnalysisResult(result, documentKey, source) {
@@ -564,67 +666,40 @@
     analysisSource = source || 'provided';
     reviewStates = Object.create(null);
     normalized.suggestions.forEach(function (task) { reviewStates[task.id] = 'pending'; });
-    analysisStatus.textContent = session.identityVerified ? '' : 'Brak bezpiecznej tożsamości dokumentu — bez porównania z poprzednim obrazem.';
+    setAnalysisStatus(session.identityVerified ? '' : 'Brak bezpiecznej tożsamości dokumentu — bez porównania z poprzednim obrazem.');
     renderAnalysisResult();
     updateAnalysisControls();
-  }
-  function createDemoAnalysis(noChanges) {
-    var points = sortedPoints();
-    var mainPoint = points[0];
-    var objectName = mainPoint ? mainPoint.name : 'główny obiekt';
-    var focusIds = mainPoint ? [mainPoint.id] : [];
-    var result = {schemaVersion: 1, analysisScope: 'full-thumbnail', mode: session.analysisMode,
-      status: noChanges ? 'no_changes' : 'suggestions',
-      summary: noChanges ? 'Przykładowy wariant wyniku bez zadań. Nie przeprowadzono oceny obrazu.' :
-        'Przykładowe porady pokazują relacje obiektu z otoczeniem. Podane wartości służą do demonstracji i nie wynikają z wag Focus Pointów.',
-      suggestions: []};
-    if (noChanges) return result;
-    result.suggestions.push({id: 'demo-separation', category: 'processing', title: 'Oddziel obiekt od tła: ' + objectName,
-      problem: 'Przykład: tło tuż przy sylwetce ma podobną jasność, przez co kontur obiektu jest mało czytelny.',
-      reason: 'Lokalny kontrast pomiędzy obiektem a otoczeniem ułatwia rozpoznanie go również na małym podglądzie.',
-      instructions: [
-        'W panelu Warstwy wybierz najwyższą warstwę. Wybierz Warstwa → Nowa warstwa dopasowania → Krzywe, aby utworzyć korektę nad całą kompozycją.',
-        'Na krzywej RGB dodaj punkt w środku i przesuń go lekko w dół. Jako testową wartość początkową ustaw Wejście 128 i Wyjście 116.',
-        'Kliknij miniaturę maski warstwy Krzywe. Wybierz Obraz → Dostosowania → Odwróć, aby biała maska stała się czarna i ukryła korektę.',
-        'Wybierz Pędzel (B), kolor biały, twardość 0% i krycie 20%. Maluj na masce wyłącznie w otoczeniu przy konturze obiektu; nie wypełniaj automatycznie całego prostokąta Focus Point.',
-        'Włączaj i wyłączaj widoczność korekty, porównując całą miniaturkę na małym podglądzie. Jeśli zmiana jest za mocna, obniż krycie warstwy Krzywe.'
-      ], expectedEffect: 'Czytelniejszy kontur bez jednakowego przyciemniania całego tła i bez zmiany pozostałych obiektów.', focusPointIds: focusIds});
-    result.suggestions.push({id: 'demo-background-color', category: 'processing', title: 'Uspokój kolor konkurującego fragmentu otoczenia',
-      problem: 'Przykład: mocno nasycony fragment tła odciąga uwagę od najważniejszego obiektu.',
-      reason: 'Spokojniejsze otoczenie pomaga utrzymać zamierzoną hierarchię, zachowując kolorystykę głównego obiektu.',
-      instructions: [
-        'Nad najwyższą warstwą dodaj Warstwa → Nowa warstwa dopasowania → Barwa/Nasycenie. Ustaw Nasycenie na -15 jako wartość testową; pozostaw Barwę i Jasność bez zmian.',
-        'Kliknij miniaturę maski nowej korekty i wybierz Obraz → Dostosowania → Odwróć, aby ukryć ją czarną maską.',
-        'Białym, miękkim Pędzlem (B) o kryciu 20% odsłoń korektę tylko na konkurującym kolorystycznie fragmencie otoczenia. Zachowaj kolor obiektu oraz innych ważnych elementów.',
-        'Porównaj całą miniaturkę przy małym powiększeniu. Dopasuj krycie warstwy tak, aby tło nadal należało do tej samej kompozycji.'
-      ], expectedEffect: 'Mniej rozpraszające otoczenie i czytelniejsza względna ważność obiektów.', focusPointIds: focusIds});
-    if (session.analysisMode === 'processing_and_composition') result.suggestions.push({id: 'demo-composition', category: 'composition', title: 'Zwiększ odstęp między obiektem a krawędzią kadru',
-      problem: 'Przykład: istotny obiekt leży tak blisko krawędzi, że jego sylwetka wygląda na przypadkowo przyciętą.',
-      reason: 'Niewielki margines porządkuje układ całej miniaturki i oddziela bohatera od granicy obrazu.',
-      instructions: [
-        'W panelu Warstwy zaznacz grupę lub wszystkie warstwy tworzące obiekt, wraz z jego efektami. Nie przesuwaj samego prostokąta Focus Point. Jeśli obiekt jest scalony z tłem i nie można go oddzielić, pomiń tę testową poradę.',
-        'Wybierz Przesunięcie (V), wyłącz Autozaznaczenie i przesuń zaznaczone elementy w stronę środka kadru o około 3% szerokości dokumentu (około 38 px dla szerokości 1280 px). Zachowaj obecny rozmiar obiektu.',
-        'Sprawdź cały kadr: odstępy od innych obiektów, położenie cienia i ciągłość tła w miejscu przesunięcia. Cofnij ruch, jeśli zaburzył te relacje.',
-        'Po ręcznej zmianie kliknij ODŚWIEŻ PODGLĄD i dopasuj oznaczenie Focus Point do nowego położenia obiektu.'
-      ], expectedEffect: 'Więcej przestrzeni przy krawędzi bez utraty relacji między bohaterem, innymi obiektami i otoczeniem.', focusPointIds: focusIds});
-    return result;
   }
   analysisModes.forEach(function (input) {
     input.addEventListener('change', function () {
       if (!input.checked || !session || currentRequest) return;
       session.analysisMode = input.value;
-      analysisStatus.textContent = currentAnalysis ? 'Zakres zmieniony. Poprzedni wynik i stany pozostają; ponowna analiza użyje nowego zakresu.' : 'Zakres zmieniony. Pokaż przykład dla wybranego trybu.';
+      setAnalysisStatus(currentAnalysis ? 'Zakres zmieniony. Poprzedni wynik i stany pozostają; ponowna analiza użyje nowego zakresu.' : 'Zakres zmieniony. Kliknij ANALIZUJ dla wybranego trybu.');
     });
   });
-  demoButton.addEventListener('click', function () {
-    runDemoAnalysis(false);
+  analyzeButton.addEventListener('click', function () {
+    startServerAnalysis(false, false);
   });
   noChangesButton.addEventListener('click', function () {
-    runDemoAnalysis(true);
+    startServerAnalysis(true, false);
   });
 
-  // Prepared input only: a clean, complete PNG plus locations and priorities.
-  // No AI call, cropping, layer binding or automatic pixel processing.
+  tokenInput.value = '';
+  tokenInput.addEventListener('input', function () {
+    testApiToken = tokenInput.value.trim();
+    updateAnalysisControls();
+  });
+  clearTokenButton.addEventListener('click', function () {
+    testApiToken = ''; tokenInput.value = '';
+    setAnalysisStatus('Token wyczyszczony. Punkty i bieżący wynik pozostają.');
+    updateAnalysisControls();
+  });
+  window.addEventListener('pagehide', function () {
+    testApiToken = ''; tokenInput.value = '';
+    cancelServerAnalysis(); updateAnalysisControls();
+  });
+  // Transport sends the complete PNG and object priorities to a mock Worker.
+  // No real AI, cropping, layer binding or automatic pixel processing.
   reanalyzeButton.addEventListener('click', startReanalysis);
   window.ktxFocusPoint = Object.freeze({getAnalysisInput: getCurrentAnalysisInput,
     prepareAnalysisRequest: prepareAnalysisRequest,

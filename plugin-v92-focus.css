@@ -48,6 +48,9 @@
 .focus-mode{display:flex;align-items:center;gap:7px;font-size:12px;color:#eef3fa;cursor:pointer}
 .focus-mode input{margin:0;accent-color:#6de1ff;flex-shrink:0}
 .focus-analysis-settings .focus-demo-secondary{font-size:11px;padding:9px}
+.focus-token-label{font-size:11px;color:#c7ced8}
+.focus-token{width:100%;box-sizing:border-box;min-width:0;padding:9px;border:1px solid var(--border);border-radius:5px;background:#15171b;color:#eef3fa;font:12px Arial}
+.focus-token:focus{outline:2px solid #6de1ff;outline-offset:1px}
 .focus-results{display:grid;gap:9px;margin-top:5px;min-width:0}
 .focus-results h3{margin:0}
 .focus-result-source{margin:0;color:#ffd36b;font-size:11px;line-height:1.5}

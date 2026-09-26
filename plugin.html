@@ -6,7 +6,7 @@
 <title>KUBIXSIO TOOLS</title>
 <link rel="stylesheet" href="plugin-v35.css?v=71">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
-<link rel="stylesheet" href="plugin-v92-focus.css?v=99">
+<link rel="stylesheet" href="plugin-v92-focus.css?v=100">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -140,17 +140,21 @@
         <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing" checked> Tylko obróbka</label>
         <label class="focus-mode"><input type="radio" name="focusAnalysisMode" value="processing_and_composition"> Obróbka i kompozycja</label>
         <p class="focus-help">Analiza będzie obejmować całą miniaturkę, wskazane obiekty i ich otoczenie. Głębię sceny możesz opisać w polu „Moje uwagi”.</p>
-        <button type="button" id="focusDemoAnalysis">POKAŻ PRZYKŁADOWĄ ANALIZĘ</button>
+        <label class="focus-token-label" for="focusApiToken">Token testowy serwera</label>
+        <input type="password" id="focusApiToken" class="focus-token" maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Wpisz TEST_API_TOKEN na tę sesję" aria-describedby="focusTokenHelp">
+        <p id="focusTokenHelp" class="focus-help">Token pozostaje tylko w pamięci tej sesji. Może zostać odczytany w przeglądarce — to rozwiązanie wyłącznie testowe, bez płatnego AI.</p>
+        <button type="button" id="focusClearToken" class="focus-demo-secondary" disabled>WYCZYŚĆ TOKEN</button>
+        <button type="button" id="focusAnalyze">ANALIZUJ</button>
         <button type="button" id="focusReanalyze" disabled>ANALIZUJ PONOWNIE</button>
-        <p class="focus-help">Ponowna analiza pobiera świeży obraz i zastępuje poprzedni wynik. Teraz wyświetla wynik testowy; AI nie jest podłączone.</p>
+        <p class="focus-help">Ponowna analiza pobiera świeży cały obraz i przesyła też poprzednią analizę ze stanami zaleceń. Dopiero poprawna odpowiedź zastępuje wynik.</p>
         <button type="button" id="focusDemoNoChanges" class="focus-demo-secondary">TEST: BRAK KONIECZNYCH POPRAWEK</button>
-        <p class="focus-help">To dane testowe, a nie ocena Twojej miniaturki. Żadna zmiana nie jest wykonywana automatycznie.</p>
+        <p class="focus-help">Worker zwraca dane demonstracyjne, a nie ocenę Twojej miniaturki. Żadna zmiana nie jest wykonywana automatycznie.</p>
         <p id="focusAnalysisStatus" class="focus-status" role="status"></p>
       </fieldset>
       <section id="focusResults" class="focus-results" aria-labelledby="focusResultsTitle" hidden>
         <h3 id="focusResultsTitle">WYNIK ANALIZY</h3>
         <p id="focusResultSource" class="focus-result-source" hidden></p>
-        <p id="focusResultSummary" class="focus-help">Tu pojawią się porady. Możesz sprawdzić panel przy użyciu przykładowej analizy.</p>
+        <p id="focusResultSummary" class="focus-help">Tu pojawią się demonstracyjne porady pobrane z serwera po kliknięciu ANALIZUJ.</p>
         <p id="focusResultProgress" class="focus-status" role="status" hidden></p>
         <div id="focusResultTasks" class="focus-result-tasks"></div>
       </section>
@@ -162,7 +166,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • v99</div>
+  <div class="footer">KUBIXSIO TOOLS • v100</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -177,7 +181,7 @@
   <button type="button" class="guide-close" aria-label="Zamknij" onclick="closeGuideLightbox()">×</button>
 </div>
 <script src="plugin-v35-core.js?v=70"></script>
-<script src="plugin-v92-focus.js?v=99"></script>
+<script src="plugin-v92-focus.js?v=100"></script>
 <script src="plugin-v35-extra.js?v=70"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
