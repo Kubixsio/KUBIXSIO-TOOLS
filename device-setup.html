@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Kubixsio — klucz urządzenia STAGING</title>
+  <style>
+    :root{color-scheme:dark}body{background:#161b22;color:#eef2f6;font:15px system-ui;margin:0;padding:18px;max-width:720px}h1{font-size:20px}h2{font-size:17px}input,textarea,button{box-sizing:border-box;width:100%;padding:11px;margin:7px 0;background:#212830;color:inherit;border:1px solid #657080;border-radius:5px}textarea{min-height:145px;resize:vertical;font:12px monospace}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}p{line-height:1.5}#status{border-left:3px solid #83b9fd;padding-left:10px;overflow-wrap:anywhere}.warning{color:#ffd58a}.meta{font-size:12px;overflow-wrap:anywhere}[hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <h1>Klucz urządzenia — STAGING</h1>
+  <p>Ta strona tworzy lokalny klucz i instrukcję SQL. Dostęp nadajesz sam w konsoli Cloudflare D1. Strona nie łączy się z Workerem ani OpenAI.</p>
+  <p class="warning">Użyj panelu w Photopea oraz tej samej przeglądarki i profilu co Kubixsio Tools. Nie używaj trybu prywatnego.</p>
+  <p id="context" class="meta"></p>
+  <label for="label">Nazwa urządzenia</label>
+  <input id="label" maxlength="100" placeholder="Mój komputer — Chrome" autocomplete="off">
+  <button id="generate" disabled>UTWÓRZ LOKALNY KLUCZ</button>
+  <p id="status" role="status" aria-live="polite">Sprawdzanie miejsca uruchomienia i lokalnej pamięci…</p>
+  <div id="result" hidden>
+    <p id="identity" class="meta"></p>
+    <div id="token-section" hidden>
+      <h2>1. Zachowaj token prywatnie</h2>
+      <label for="token">Token urządzenia — nie wysyłaj go w rozmowie ani do repozytorium</label>
+      <input id="token" type="password" readonly autocomplete="off" spellcheck="false">
+      <button id="show-token">POKAŻ TOKEN</button>
+      <p>Po pokazaniu możesz zaznaczyć token i skopiować go ręcznie do prywatnego menedżera haseł. Strona nie zapisuje tokenu. Po jej zamknięciu lub odświeżeniu nie da się go odzyskać z klucza.</p>
+      <button id="clear">WYCZYŚĆ TOKEN Z TEJ STRONY</button>
+    </div>
+    <p id="token-lost" class="warning" hidden>Wczytano istniejący klucz. Token nie jest przechowywany na stronie — użyj własnej, wcześniej zachowanej kopii. Jeśli go nie zachowałeś, nie zatwierdzaj SQL; najpierw ustalimy bezpieczne odtworzenie dostępu.</p>
+    <h2>2. Zatwierdź urządzenie w D1 STAGING</h2>
+    <p>Skopiuj wyłącznie SQL do bazy <strong>kubixsio-focus-point-staging</strong>. Zawiera identyfikator, nazwę, skrót tokenu i klucz publiczny. Nie zawiera tokenu ani klucza prywatnego.</p>
+    <label for="sql">SQL do zatwierdzenia</label><textarea id="sql" readonly spellcheck="false"></textarea>
+    <h2>3. Sprawdź zapis i lokalny klucz</h2>
+    <label for="verification-sql">SQL do sprawdzenia zapisu w tej samej bazie D1</label><textarea id="verification-sql" readonly spellcheck="false"></textarea>
+    <p>Oczekiwany wynik: jeden wiersz, registration = ZGODNE, auth_version = 1, revoked_at = null.</p>
+    <button id="check">SPRAWDŹ LOKALNY KLUCZ</button>
+    <p>Test podpisuje dane lokalnie i sprawdza podpis kluczem publicznym. Nie sprawdza dostępu do serwera.</p>
+    <details><summary>SQL do późniejszego unieważnienia tego urządzenia</summary><textarea id="revocation-sql" readonly spellcheck="false" aria-label="SQL unieważnienia"></textarea></details>
+  </div>
+  <p class="meta">Klucz prywatny jest nieeksportowalny przez Web Crypto. Skrypty działające pod tym samym originem mogą jednak uzyskać możliwość podpisywania. Używaj wyłącznie zaufanych stron i pluginów tego originu.</p>
+  <script src="device-auth-client.js?v=staging-setup-1"></script>
+  <script src="device-setup.js?v=staging-setup-1"></script>
+</body>
+</html>
