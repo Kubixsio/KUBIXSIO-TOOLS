@@ -26,7 +26,7 @@
   window.ktxSaveToOEGate = gate;
 
   // Stage 2: object locations and relative priorities for the complete image.
-  // One active document and one completed analysis remain only in memory.
+  // One active document and one completed analysis, scoped to this Photopea tab.
   var stage = document.getElementById('focusStage');
   var overlay = document.getElementById('focusOverlay');
   var editor = document.getElementById('focusEditor');
@@ -42,6 +42,7 @@
   var clearTokenButton = document.getElementById('focusClearToken');
   var noChangesButton = document.getElementById('focusDemoNoChanges');
   var analysisStatus = document.getElementById('focusAnalysisStatus');
+  var sessionStatus = document.getElementById('focusSessionStatus');
   var resultsPanel = document.getElementById('focusResults');
   var resultsTitle = document.getElementById('focusResultsTitle');
   var resultSource = document.getElementById('focusResultSource');
@@ -74,6 +75,8 @@
   var gesture = null;
   var handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   var EPSILON = 0.000001;
+  var sessionStore = window.ktxFocusSessionState || null;
+  var pendingRestore = null;
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function findPoint(id) {
@@ -158,6 +161,7 @@
         point.name = name.value.trim() || 'Focus Point ' + point.id;
         select.textContent = '#' + point.id + ' · ' + point.name + ' — waga ' + point.weight;
         renderBoxes();
+        saveCurrentState();
       });
       name.addEventListener('blur', function () { name.value = point.name; });
       nameLabel.appendChild(name);
@@ -180,6 +184,7 @@
           point.weight = value;
           select.textContent = '#' + point.id + ' · ' + point.name + ' — waga ' + point.weight;
           renderBoxes();
+          saveCurrentState();
         }
       });
       function commitWeight() {
@@ -199,6 +204,7 @@
           if (element) pointList.appendChild(element);
         });
         renderBoxes();
+        saveCurrentState();
       }
       weight.addEventListener('change', commitWeight);
       weight.addEventListener('blur', commitWeight);
@@ -215,6 +221,7 @@
         if (selectedId === point.id) selectedId = null;
         renderList();
         renderBoxes();
+        saveCurrentState();
       });
       fields.appendChild(remove);
       row.appendChild(fields);
@@ -251,6 +258,7 @@
     }
     editor.hidden = false; renderList(); renderBoxes(); updateEditorControls();
     editorStatus.textContent = meta.documentKey ? '' : 'Nie rozpoznano dokumentu. Rozpoczęto nowy zestaw oznaczeń; porównanie z poprzednim obrazem jest niedostępne.';
+    saveCurrentState();
   }
   function relativePosition(event) {
     var bounds = overlay.getBoundingClientRect();
@@ -335,6 +343,7 @@
     overlay.releasePointerCapture(event.pointerId);
     renderBoxes();
     updateEditorControls();
+    saveCurrentState();
   });
   overlay.addEventListener('pointercancel', cancelGesture);
   overlay.addEventListener('lostpointercapture', function () { if (gesture) cancelGesture(); });
@@ -344,9 +353,168 @@
       editorStatus.textContent = 'Zaznaczanie anulowane.';
     }
   });
-  notesInput.addEventListener('input', function () { if (session) session.notes = notesInput.value; });
+  notesInput.addEventListener('input', function () { if (session) { session.notes = notesInput.value; saveCurrentState(); } });
 
   function copyJson(value) { return JSON.parse(JSON.stringify(value)); }
+  function stateWarning(message) {
+    if (sessionStatus) sessionStatus.textContent = message || '';
+  }
+  function stateSnapshot() {
+    if (!session || !session.identityVerified || !capturedMeta || !capturedBlob || !capturedMeta.documentKey) return null;
+    var previous = lastAnalysisInput && {
+      schemaVersion: lastAnalysisInput.schemaVersion, image: lastAnalysisInput.image,
+      document: copyJson(lastAnalysisInput.document), coordinateSystem: lastAnalysisInput.coordinateSystem,
+      analysisMode: lastAnalysisInput.analysisMode, focusMeaning: lastAnalysisInput.focusMeaning,
+      weightMeaning: lastAnalysisInput.weightMeaning, focusPoints: copyJson(lastAnalysisInput.focusPoints),
+      notes: lastAnalysisInput.notes
+    };
+    if (currentAnalysis && (!previous || !(previous.image instanceof Blob))) throw new Error('Incomplete result snapshot');
+    return {version: 1, capturedMeta: copyJson(capturedMeta), currentImage: capturedBlob,
+      points: copyJson(session.points), nextId: session.nextId, selectedId: selectedId,
+      notes: session.notes, analysisMode: session.analysisMode, previewRevision: previewRevision,
+      executionMode: executionMode,
+      result: currentAnalysis ? copyJson(currentAnalysis) : null, source: analysisSource,
+      telemetry: analysisTelemetry ? copyJson(analysisTelemetry) : null,
+      taskStates: Object.assign({}, reviewStates), previous: previous,
+      analyzedAt: lastAnalyzedAt};
+  }
+  function saveCurrentState() {
+    if (!sessionStore) { stateWarning('Zapis sesji niedostępny — stan może zniknąć po przełączeniu panelu.'); return; }
+    var snapshot;
+    try { snapshot = stateSnapshot(); }
+    catch (_) { stateWarning('Nie zapisano niepełnego wyniku. Stan może zniknąć po przełączeniu panelu.'); return; }
+    if (!snapshot) return;
+    sessionStore.save(snapshot.capturedMeta.documentKey, snapshot).then(function () { stateWarning(''); }, function () {
+      stateWarning('Nie udało się zapisać stanu sesji. Analiza działa, ale dane mogą zniknąć po przełączeniu panelu.');
+    });
+  }
+  function clearSavedState() {
+    if (sessionStore) sessionStore.clear().catch(function () {
+      stateWarning('Nie udało się usunąć starego zapisu sesji; nie zostanie automatycznie przypisany do innego dokumentu.');
+    });
+  }
+  function validStoredPoints(points) {
+    if (!Array.isArray(points)) return false;
+    var seen = new Set();
+    return points.every(function (point) {
+      if (!point || !Number.isSafeInteger(point.id) || point.id <= 0 || seen.has(point.id) ||
+        typeof point.name !== 'string' || !point.name.trim() ||
+        !Number.isFinite(point.weight) || point.weight <= 0 || !point.rect) return false;
+      seen.add(point.id);
+      var r = point.rect;
+      return [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.x >= 0 && r.y >= 0 &&
+        r.width > 0 && r.height > 0 && r.x + r.width <= 1 + EPSILON && r.y + r.height <= 1 + EPSILON;
+    });
+  }
+  function validateStoredState(record) {
+    var data = record && record.snapshot, meta = data && data.capturedMeta;
+    if (!record || !data || data.version !== 1 || !meta ||
+      typeof record.documentKey !== 'string' || !/^local,[0-9]+,/.test(record.documentKey) ||
+      meta.documentKey !== record.documentKey || typeof meta.name !== 'string' ||
+      !Number.isSafeInteger(meta.width) || meta.width <= 0 ||
+      !Number.isSafeInteger(meta.height) || meta.height <= 0 ||
+      !(data.currentImage instanceof Blob) || data.currentImage.type !== 'image/png' || !data.currentImage.size ||
+      !validStoredPoints(data.points) || !Number.isSafeInteger(data.nextId) ||
+      data.nextId <= data.points.reduce(function (max, point) { return Math.max(max, point.id); }, 0) ||
+      typeof data.notes !== 'string' ||
+      !['processing', 'processing_and_composition'].includes(data.analysisMode) ||
+      !['MOCK', 'AI'].includes(data.executionMode)) throw new Error('Invalid stored preview');
+    if (data.result !== null) {
+      var previous = data.previous;
+      if (!previous || previous.schemaVersion !== 2 || !previous.document ||
+        previous.document.documentKey !== meta.documentKey || previous.document.identityVerified !== true ||
+        !Number.isSafeInteger(previous.document.width) || previous.document.width <= 0 ||
+        !Number.isSafeInteger(previous.document.height) || previous.document.height <= 0 ||
+        !(previous.image instanceof Blob) || previous.image.type !== 'image/png' || !previous.image.size ||
+        !validStoredPoints(previous.focusPoints) ||
+        !['processing', 'processing_and_composition'].includes(previous.analysisMode) ||
+        previous.coordinateSystem !== 'normalized-0-1' ||
+        previous.focusMeaning !== 'object-location-in-full-composition' ||
+        previous.weightMeaning !== 'relative-importance' || typeof previous.notes !== 'string' ||
+        !['demo', 'ai', 'provided'].includes(data.source) ||
+        typeof data.analyzedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(data.analyzedAt))
+        throw new Error('Incomplete stored analysis');
+      data.result = normalizeAnalysisResult(data.result, previous.analysisMode);
+      var states = Object.create(null), savedStates = data.taskStates;
+      if (!savedStates || typeof savedStates !== 'object') throw new Error('Invalid task states');
+      data.result.suggestions.forEach(function (task) {
+        if (!['pending', 'done', 'skipped'].includes(savedStates[task.id])) throw new Error('Invalid task state');
+        states[task.id] = savedStates[task.id];
+      });
+      data.taskStates = states;
+      if (data.source === 'ai' && data.telemetry !== null) {
+        var telemetry = data.telemetry;
+        if (!telemetry || ['day','month','inputTokens','outputTokens','cachedTokens'].some(function (key) {
+          return telemetry[key] !== null && (!Number.isSafeInteger(telemetry[key]) || telemetry[key] < 0);
+        })) throw new Error('Invalid usage data');
+      }
+      if (data.source !== 'ai' && data.telemetry !== null) throw new Error('Unexpected usage data');
+    } else if (data.previous !== null || data.source || data.telemetry !== null || data.analyzedAt)
+      throw new Error('Partial stored analysis');
+    return data;
+  }
+  function restoreStoredState(data) {
+    var meta = data.capturedMeta;
+    var nextUrl = URL.createObjectURL(data.currentImage);
+    previewImage.onload = function () {
+      previewImage.onload = null; previewImage.onerror = null;
+      if (!currentRequest || !currentRequest.restoreOnly) { URL.revokeObjectURL(nextUrl); return; }
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = nextUrl;
+      session = {points: data.points, nextId: data.nextId, notes: data.notes,
+        analysisMode: data.analysisMode, identityVerified: true};
+      capturedMeta = data.capturedMeta;
+      capturedBlob = data.currentImage;
+      previewRevision = Number.isSafeInteger(data.previewRevision) ? data.previewRevision : 0;
+      currentAnalysis = data.result; analysisSource = data.source; analysisTelemetry = data.telemetry;
+      executionMode = data.executionMode;
+      executionModes.forEach(function (input) { input.checked = input.value === executionMode; });
+      aiConsent.checked = false;
+      reviewStates = data.taskStates; lastAnalysisInput = data.previous; lastAnalyzedAt = data.analyzedAt;
+      commitPreview(meta, data.currentImage);
+      if (data.selectedId && findPoint(data.selectedId)) selectPoint(data.selectedId);
+      previewImage.alt = 'Podgląd dokumentu ' + meta.name;
+      previewBox.hidden = false;
+      metaLabel.textContent = meta.name + ' • ' + meta.width + ' × ' + meta.height + ' px';
+      captureButton.textContent = 'ODŚWIEŻ PODGLĄD';
+      renderAnalysisResult(); updateAnalysisControls();
+      setFocusStatus('Przywrócono stan Focus Point dla bieżącego dokumentu.', 'ok');
+      setAnalysisStatus(currentAnalysis ? 'Przywrócono ostatni wynik. ANALIZUJ PONOWNIE pobierze świeży obraz Photopea.' : 'Przywrócono punkty i podgląd.');
+      settleRequest(0);
+    };
+    previewImage.onerror = function () {
+      previewImage.onload = null; previewImage.onerror = null;
+      URL.revokeObjectURL(nextUrl); clearSavedState();
+      setFocusStatus('Nie udało się odtworzyć zapisanego podglądu. Pobierz go ponownie.', 'error');
+      settleRequest(0);
+    };
+    previewImage.src = nextUrl;
+  }
+  async function restoreSession() {
+    if (!sessionStore) { stateWarning('Zapis sesji niedostępny — stan może zniknąć po przełączeniu panelu.'); return; }
+    try {
+      var status = await sessionStore.initialize();
+      if (!status.ready) throw new Error('Local state unavailable');
+      var record = await sessionStore.load();
+      if (!record || session || currentRequest) return;
+      pendingRestore = validateStoredState(record);
+      var retries = 20;
+      function startProbe() {
+        if (!pendingRestore || session || currentRequest) return;
+        if (busyOutsideFocus()) {
+          if (retries-- > 0) setTimeout(startProbe, 250);
+          else stateWarning('Nie można potwierdzić dokumentu Photopea. Ponownie otwórz panel, aby przywrócić stan.');
+          return;
+        }
+        capturePreview(true);
+      }
+      startProbe();
+    } catch (_) {
+      pendingRestore = null;
+      clearSavedState();
+      stateWarning('Zapis sesji jest niedostępny lub uszkodzony. Analiza działa, lecz stan może zniknąć po przełączeniu panelu.');
+    }
+  }
   function modeName(mode) { return mode === 'processing' ? 'Tylko obróbka' : 'Obróbka i kompozycja'; }
   function updateTaskCard(card, state) {
     card.classList.toggle('focus-task-done', state === 'done');
@@ -402,6 +570,7 @@
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = ''; previewImage.removeAttribute('src');
     resetAnalysis(); renderList(); renderBoxes(); updateEditorControls();
+    clearSavedState();
   }
   function setAnalysisStatus(message, isError) {
     analysisStatus.textContent = message;
@@ -596,6 +765,7 @@
     if (!card) return;
     reviewStates[taskId] = reviewStates[taskId] === state ? 'pending' : state;
     updateTaskCard(card, reviewStates[taskId]); updateResultProgress();
+    saveCurrentState();
   }
   function buildTaskCard(task, states, onChange) {
       var card = document.createElement('article');
@@ -690,12 +860,14 @@
     setAnalysisStatus(session.identityVerified ? '' : 'Brak bezpiecznej tożsamości dokumentu — bez porównania z poprzednim obrazem.');
     renderAnalysisResult();
     updateAnalysisControls();
+    saveCurrentState();
   }
   analysisModes.forEach(function (input) {
     input.addEventListener('change', function () {
       if (!input.checked || !session || currentRequest) return;
       session.analysisMode = input.value;
       setAnalysisStatus(currentAnalysis ? 'Zakres zmieniony. Poprzedni wynik i stany pozostają; ponowna analiza użyje nowego zakresu.' : 'Zakres zmieniony. Kliknij ANALIZUJ dla wybranego trybu.');
+      saveCurrentState();
     });
   });
   analyzeButton.addEventListener('click', function () {
@@ -712,6 +884,7 @@
       executionMode = input.value; aiConsent.checked = false;
       updateAnalysisControls();
       setAnalysisStatus('Wybrano ' + executionMode + '. Dotychczasowy wynik i stany pozostają.');
+      saveCurrentState();
     });
   });
   aiConsent.checked = false;
@@ -726,6 +899,8 @@
     updateAnalysisControls();
   });
   window.addEventListener('pagehide', function () {
+    cancelGesture();
+    saveCurrentState();
     testApiToken = ''; tokenInput.value = ''; pendingReanalysis = null;
     executionMode = 'MOCK'; aiConsent.checked = false;
     executionModes.forEach(function (input) { input.checked = input.value === 'MOCK'; });
@@ -745,6 +920,7 @@
   });
   updateEditorControls();
   refreshDeviceState();
+  restoreSession();
   window.addEventListener('pageshow', function (event) { if (event.persisted) refreshDeviceState(); });
 
 
@@ -915,7 +1091,7 @@
       !!window.folderizeBusy;
   }
 
-  function capturePreview() {
+  function capturePreview(restoreOnly) {
     if (currentRequest || analysisBusy) return;
     if (busyOutsideFocus()) {
       setFocusStatus('Poczekaj, aż Photopea zakończy obecne działanie lub eksport.', 'error');
@@ -925,6 +1101,7 @@
     cancelGesture();
     var id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random();
     currentRequest = {id: id, phase: 'ping', meta: null, buffer: null, error: '', rendered: false,
+      restoreOnly: restoreOnly === true,
       timeoutTimer: null, nextStepTimer: null, settleTimer: null};
     gate.owner = 'focus';
     gate.externalBufferSeen = false;
@@ -997,6 +1174,20 @@
         failCapture('Nie udało się odczytać nazwy i wymiarów dokumentu.');
         return;
       }
+      if (currentRequest.restoreOnly) {
+        var saved = pendingRestore;
+        pendingRestore = null;
+        if (!saved || !currentRequest.meta.documentKey ||
+            saved.capturedMeta.documentKey !== currentRequest.meta.documentKey) {
+          clearSavedState();
+          setFocusStatus('Aktywny dokument Photopea nie pasuje do zapisu sesji. Stara analiza nie została przywrócona.', 'error');
+          settleRequest(0);
+          return;
+        }
+        armTimeout(currentRequest.id, 60000, 'Nie udało się odtworzyć podglądu w Photopea.');
+        restoreStoredState(saved);
+        return;
+      }
       if (capturedMeta && (!currentRequest.meta.documentKey || currentRequest.meta.documentKey !== capturedMeta.documentKey)) clearDocumentState();
       var exportId = currentRequest.id;
       var exportToken = JSON.stringify(exportId);
@@ -1023,7 +1214,7 @@
     }
   }, true);
 
-  captureButton.addEventListener('click', capturePreview);
+  captureButton.addEventListener('click', function () { capturePreview(false); });
   window.addEventListener('beforeunload', function () {
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
   });
