@@ -32,6 +32,25 @@
   }
   function httpError(response, data) {
     var code = data && data.error && data.error.code;
+    var tokenMessages = {
+      TOKEN_MISSING: 'Nie podano tokenu urządzenia STAGING.',
+      TOKEN_FORMAT_INVALID: 'Token urządzenia STAGING ma niepoprawny format.',
+      TOKEN_UNKNOWN: 'Token nie został rozpoznany przez STAGING albo urządzenie zostało unieważnione.'
+    };
+    if (Object.prototype.hasOwnProperty.call(tokenMessages, code))
+      return error(code, tokenMessages[code] + '\nKod: ' + code + '\nPoprzednie porady pozostają.');
+    if (code === 'DEVICE_PROOF_REQUIRED' || code === 'DEVICE_KEY_REQUIRED')
+      return error('DEVICE_PROOF_REQUIRED', 'STAGING wymaga podpisu zarejestrowanego urządzenia.'
+        + '\nKod: DEVICE_PROOF_REQUIRED\nPoprzednie porady pozostają.');
+    if (code === 'DEVICE_PROOF_INVALID')
+      return error('DEVICE_SIGNATURE_INVALID', 'Podpis urządzenia nie pasuje do zarejestrowanego klucza.'
+        + '\nKod: DEVICE_SIGNATURE_INVALID\nPoprzednie porady pozostają.');
+    if (code === 'CLIENT_UPGRADE_REQUIRED' || code === 'INVALID_MODE')
+      return error('WRONG_AUTH_MODE', 'Panel i Worker używają niezgodnego trybu autoryzacji STAGING.'
+        + '\nKod: WRONG_AUTH_MODE\nPoprzednie porady pozostają.');
+    if (code === 'NOT_FOUND' || response.status === 404)
+      return error('WRONG_ENDPOINT', 'Panel nie trafił na oczekiwany endpoint STAGING.'
+        + '\nKod: WRONG_ENDPOINT\nPoprzednie porady pozostają.');
     if (code === 'OPENAI_REDIRECT_REJECTED') {
       var redirect = data.error.diagnostic || {};
       var status = Number.isInteger(redirect.httpStatus) && redirect.httpStatus >= 300
@@ -82,9 +101,9 @@
       + ' To limit prób, nie pieniędzy. Poprzednie porady i stany pozostają.');
     if (['AI_DISABLED', 'PAID_STAGING_NOT_APPROVED', 'OPENAI_NOT_CONFIGURED', 'CONFIGURATION_ERROR', 'MODEL_NOT_ALLOWED'].includes(code))
       return error(code, 'Serwer nie jest gotowy do wybranego trybu STAGING. Sprawdź konfigurację i instrukcję; nie wysłano żądania do OpenAI. Poprzednie porady pozostają.');
-    if (response.status === 401) return error('UNAUTHORIZED', 'Token jest nieprawidłowy lub dostęp urządzenia został unieważniony. Sprawdź token STAGING. Poprzednie porady pozostają.');
-    if (code === 'DEVICE_PROOF_INVALID' || code === 'DEVICE_PROOF_REQUIRED' || code === 'DEVICE_KEY_REQUIRED')
-      return error(code, 'Nie udało się potwierdzić podpisu urządzenia. Sprawdź, czy używasz właściwego profilu, tokenu i zatwierdzonego klucza STAGING. Poprzednie porady pozostają.');
+    if (response.status === 401) return error('UNAUTHORIZED',
+      'Autoryzacja została odrzucona. Może to oznaczać zmianę lub unieważnienie urządzenia.'
+      + '\nKod: UNAUTHORIZED\nPoprzednie porady pozostają.');
     if (response.status === 403) return error('ACCESS_DENIED', 'Serwer odrzucił dostęp. Konfiguracja CORS musi dopuszczać https://kubixsio.github.io. Poprzednie porady pozostają.');
     if (code === 'NONCE_REPLAY' || code === 'NONCE_EXPIRED' || code === 'NONCE_INVALID')
       return error(code, 'Podpis wygasł albo challenge został już wykorzystany. Uruchom analizę ponownie, aby pobrać nowy challenge. Poprzednie porady pozostają.');
@@ -149,17 +168,25 @@
     try {
       if (!['MOCK', 'AI'].includes(mode) || (mode === 'AI' && noChanges))
         throw error('INVALID_MODE', 'Nieprawidłowy tryb analizy. Test braku poprawek jest dostępny tylko w MOCK.');
-      if (typeof token !== 'string' || !/^[\x21-\x7e]{32,512}$/.test(token))
-        throw error('TOKEN_REQUIRED', 'Wpisz token zarejestrowanego urządzenia STAGING. Token pozostaje wyłącznie w pamięci sesji.');
+      if (typeof token !== 'string' || !token.trim())
+        throw error('TOKEN_MISSING', 'Nie podano tokenu urządzenia STAGING.\nKod: TOKEN_MISSING\nPoprzednie porady pozostają.');
+      token = token.trim();
+      if (!/^[\x21-\x7e]{32,512}$/.test(token))
+        throw error('TOKEN_FORMAT_INVALID', 'Token urządzenia STAGING ma niepoprawny format.\nKod: TOKEN_FORMAT_INVALID\nPoprzednie porady pozostają.');
       var status = await initialize();
       if (!status.ready) throw error(status.code, status.message);
       if (typeof body !== 'string' || encoder.encode(body).length > MAX_BODY) throw error('PAYLOAD_TOO_LARGE', 'Żądanie przekracza limit 16 MiB. Poprzednie porady pozostają.');
       stage('Sprawdzam gotowość serwera STAGING ' + mode + '…');
       var health = (await request('/health', {method: 'GET'}, signal, 16384)).data;
       if (!health || health.ok !== true || health.service !== 'kubixsio-focus-point'
-        || (mode === 'MOCK' && health.signedMockAvailable !== true &&
+        || health.version !== '2.1.0')
+        throw error('WRONG_ENDPOINT', 'Panel nie połączył się z oczekiwanym Workerem STAGING 2.1.0.'
+          + '\nKod: WRONG_ENDPOINT\nNie wysłano tokenu ani obrazu. Poprzednie porady pozostają.');
+      if (mode === 'MOCK' && health.signedMockAvailable !== true &&
           !(health.mode === 'mock' && health.aiEnabled === false && health.mockDeviceProofRequired === true))
-        || (mode === 'AI' && (health.version !== '2.1.0' || health.mode !== 'ai' || health.aiEnabled !== true || health.paidAiReady !== true)))
+        throw error('WRONG_AUTH_MODE', 'Worker STAGING nie potwierdza wymaganego podpisu urządzenia w MOCK.'
+          + '\nKod: WRONG_AUTH_MODE\nNie wysłano tokenu ani obrazu. Poprzednie porady pozostają.');
+      if (mode === 'AI' && (health.mode !== 'ai' || health.aiEnabled !== true || health.paidAiReady !== true))
         throw error('STAGING_NOT_READY', 'Serwer nie potwierdził gotowości wybranego trybu ' + mode + '. Sprawdź instrukcję STAGING. Nie wysłano tokenu ani obrazu. Poprzednie porady pozostają.');
       stage('Pobieram jednorazowy challenge urządzenia…');
       var challenge = (await request('/auth/challenge', {method: 'POST', headers: {Authorization: 'Bearer ' + token}}, signal, 16384)).data;

@@ -591,9 +591,12 @@
     updateAnalysisControls();
   }
   function hasTestToken() {
+    // The iframe may be recreated after switching Photopea panels. Read the
+    // current field at click time; the device token is never restored from disk.
+    testApiToken = tokenInput.value.trim();
     if (testApiToken && /^[\x21-\x7e]{32,512}$/.test(testApiToken)) return true;
-    setAnalysisStatus(testApiToken ? 'Nieprawidłowy format tokenu urządzenia STAGING. Wpisz token bez spacji.'
-      : 'Wpisz token zarejestrowanego urządzenia STAGING przed analizą. Nie zapisujemy go na dysku.', true);
+    setAnalysisStatus(testApiToken ? 'Nieprawidłowy format tokenu urządzenia STAGING.\nKod: TOKEN_FORMAT_INVALID'
+      : 'Wpisz token zarejestrowanego urządzenia STAGING przed analizą. Nie zapisujemy go na dysku.\nKod: TOKEN_MISSING', true);
     tokenInput.focus();
     return false;
   }
