@@ -19,8 +19,8 @@ INSERT OR IGNORE INTO ai_review_attempts(id,day_key,month_key,state)
 CREATE TRIGGER IF NOT EXISTS ai_review_attempts_limit
 BEFORE INSERT ON ai_review_attempts WHEN NEW.state != 'legacy'
 BEGIN
-  SELECT CASE WHEN (SELECT COUNT(*) FROM ai_review_attempts WHERE month_key=NEW.month_key) >= 50
-    THEN RAISE(ABORT,'MONTHLY_LIMIT') END;
-  SELECT CASE WHEN (SELECT COUNT(*) FROM ai_review_attempts WHERE day_key=NEW.day_key) >= 5
-    THEN RAISE(ABORT,'DAILY_LIMIT') END;
+  SELECT (CASE WHEN (SELECT COUNT(*) FROM ai_review_attempts WHERE month_key=NEW.month_key) >= 50
+    THEN RAISE(ABORT,'MONTHLY_LIMIT') END);
+  SELECT (CASE WHEN (SELECT COUNT(*) FROM ai_review_attempts WHERE day_key=NEW.day_key) >= 5
+    THEN RAISE(ABORT,'DAILY_LIMIT') END);
 END;
