@@ -1,0 +1,5 @@
+node_modules/
+build/
+test-results/
+.dev.vars*
+.env*
