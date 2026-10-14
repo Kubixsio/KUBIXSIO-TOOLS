@@ -16,14 +16,18 @@ const harness = `<!doctype html><html><body style="margin:0;background:#15171b">
 <iframe id="plugin" src="/plugin.html" style="width:430px;height:1400px;border:0"></iframe>
 <script>
 var version=0, receivedScripts=[], plugin=document.getElementById('plugin');
-function documentFixture(name){return {name:name,width:64,height:36,saveToOE:function(){
+var documentSequence=0;
+function documentFixture(name){return {name:name,source:'local,'+(documentSequence++)+','+name,width:64,height:36,saveToOE:function(){
   var canvas=document.createElement('canvas');canvas.width=64;canvas.height=36;var ctx=canvas.getContext('2d');
   ctx.fillStyle=version?'#777777':'#eeeeee';ctx.fillRect(0,0,64,36);
   var bytes=Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1]),c=>c.charCodeAt(0));
   setTimeout(function(){plugin.contentWindow.postMessage(bytes.buffer,location.origin);plugin.contentWindow.postMessage('done',location.origin);},50);
 }};}
-var doc=documentFixture('Thumbnail.psd');var app={documents:[doc],activeDocument:doc,echoToOE:function(text){plugin.contentWindow.postMessage(text,location.origin);}};
-window.changeDocument=function(name){var next=documentFixture(name);app.documents.push(next);app.activeDocument=next;};
+var doc=documentFixture('Thumbnail.psd'), documents=[doc];var app={echoToOE:function(text){plugin.contentWindow.postMessage(text,location.origin);}};
+// Photopea creates fresh document wrappers on every access. Object identity is not stable.
+Object.defineProperty(app,'documents',{get:function(){return documents.map(function(d){return Object.assign({},d);});}});
+Object.defineProperty(app,'activeDocument',{get:function(){return Object.assign({},doc);},set:function(d){doc=d;}});
+window.changeDocument=function(name){var next=documentFixture(name);documents.push(next);app.activeDocument=next;};
 window.addEventListener('message',function(event){if(event.source!==plugin.contentWindow||typeof event.data!=='string')return;
   receivedScripts.push(event.data);try{new Function('app',event.data)(app);}catch(error){console.error(error);}
   setTimeout(function(){plugin.contentWindow.postMessage('done',location.origin);},5);

@@ -162,13 +162,18 @@
     setTimeout(function () { if (captureJob === job && !job.finishing) originalPostScript(script); }, 0);
   }
   function documentMetadataScript(id) {
+    // Photopea creates fresh document wrappers. Its documented source stays
+    // stable; the parent-page map survives panel reloads without changing it.
     return 'try{var d=app.activeDocument;if(!d)throw new Error("Brak otwartego dokumentu w Photopea.");' +
-      'var entries=window.ktxAiReviewDocuments||(window.ktxAiReviewDocuments=[]);' +
-      'for(var i=entries.length-1;i>=0;i--){var found=false;for(var j=0;j<app.documents.length;j++)if(entries[i].document===app.documents[j])found=true;if(!found)entries.splice(i,1);}' +
-      'var key=null;for(var i=0;i<entries.length;i++)if(entries[i].document===d)key=entries[i].key;' +
-      'if(!key){key="review:"+' + JSON.stringify(id) + ';entries.push({document:d,key:key});}' +
-      'function px(v){try{return v.as("px")}catch(_){}return Number(v)}' +
-      'app.echoToOE("KTX_AI_META|"+' + JSON.stringify(id) + '+"|"+JSON.stringify({name:String(d.name||"Bez nazwy"),width:Math.round(px(d.width)),height:Math.round(px(d.height)),documentKey:key}));' +
+      'var source=String(d.source||"");if(!source)throw new Error("Photopea nie wskazała źródła dokumentu.");' +
+      'var entries=window.ktxAiReviewDocuments||(window.ktxAiReviewDocuments=[]),matches=0;' +
+      'for(var j=0;j<app.documents.length;j++)if(String(app.documents[j].source)===source)matches++;' +
+      'if(matches!==1)throw new Error("Otwórz tę miniaturkę tylko raz, aby pobrać jej podgląd.");' +
+      'for(var i=entries.length-1;i>=0;i--){var found=false;for(var j=0;j<app.documents.length;j++)if(entries[i].source===String(app.documents[j].source))found=true;if(!found)entries.splice(i,1);}' +
+      'var key=null;for(var i=0;i<entries.length;i++)if(entries[i].source===source)key=entries[i].key;' +
+      'if(!key){key="review:"+' + JSON.stringify(id) + ';entries.push({source:source,key:key});}' +
+      'function px(v){if(v&&typeof v.as==="function")return v.as("px");return Number(v)}' +
+      'app.echoToOE("KTX_AI_META|"+' + JSON.stringify(id) + '+"|"+JSON.stringify({name:String(d.name||"Bez nazwy"),width:Math.round(px(d.width)),height:Math.round(px(d.height)),documentKey:key,source:source}));' +
       '}catch(e){app.echoToOE("KTX_AI_ERROR|"+' + JSON.stringify(id) + '+"|"+String(e.message||e));}';
   }
   function capture(options) {
@@ -229,12 +234,13 @@
       try {
         job.meta = JSON.parse(data.slice(metaPrefix.length));
         if (!Number.isSafeInteger(job.meta.width) || job.meta.width <= 0 || !Number.isSafeInteger(job.meta.height) || job.meta.height <= 0 ||
-            typeof job.meta.documentKey !== 'string' || !/^review:[a-f0-9-]{36}$/.test(job.meta.documentKey)) throw new Error();
+            typeof job.meta.documentKey !== 'string' || !/^review:[a-f0-9-]{36}$/.test(job.meta.documentKey) ||
+            typeof job.meta.source !== 'string' || !job.meta.source) throw new Error();
       } catch (_) { finishCapture(new Error('Niepoprawne dane dokumentu.')); return; }
       if (job.metadataOnly) { finishCapture(null, {meta: job.meta}); return; }
       job.phase = 'export'; job.onStatus('Pobieranie podglądu...');
       armTimeout('Photopea nie zwróciła PNG. Spróbuj odświeżyć podgląd.', 60000);
-      send('try{var entries=window.ktxAiReviewDocuments||[],d=app.activeDocument,key=null;for(var i=0;i<entries.length;i++)if(entries[i].document===d)key=entries[i].key;' +
+      send('try{var entries=window.ktxAiReviewDocuments||[],d=app.activeDocument,key=null;if(String(d.source)!==' + JSON.stringify(job.meta.source) + ')throw new Error("Dokument zmienił się podczas pobierania.");for(var i=0;i<entries.length;i++)if(entries[i].source===String(d.source))key=entries[i].key;' +
         'if(key!==' + JSON.stringify(job.meta.documentKey) + ')throw new Error("Dokument zmienił się podczas pobierania.");d.saveToOE("png");}' +
         'catch(e){app.echoToOE("KTX_AI_ERROR|"+' + JSON.stringify(job.id) + '+"|"+String(e.message||e));}'); return;
     }
