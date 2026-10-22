@@ -44,6 +44,10 @@ Limity: 5 prób dziennie i 50 miesięcznie według UTC; 6 żądań dostępu na m
 
 Schemat JSON używa [oficjalnego structured output](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses), a obrazy są przekazywane jako [pełne dane PNG](https://developers.openai.com/api/docs/guides/images-vision).
 
+Schemat ogranicza format identyfikatorów, długości i niepuste teksty (także odrzuca same białe znaki), liczbę elementów, kategorie i priorytety. Walidator wymaga dokładnie tych samych pól obowiązkowych. Nie należy jednak deklarować pełnej równoważności: unikalność `id` i `issueKey` między różnymi obiektami pozostaje kontrolą semantyczną walidatora. JSON Schema liczy długość w punktach Unicode, a istniejący walidator stosuje ostrzejszy limit jednostek UTF-16 (np. emoji); tej kontroli nie osłabiono. Testy Ajv jawnie obejmują oba ograniczenia i sześć wymaganych fixture'ów.
+
+Przy `OPENAI_INVALID_RESULT` Worker zwraca wyłącznie stałe pola diagnostyczne `stage` i `validationCode`: rozróżniają dekodowanie odpowiedzi (`envelope_decode`), parsowanie oceny (`review_decode`) i walidację kontraktu (`review_validation`). Kody wskazują pole albo duplikat, bez jego wartości. Nie są zwracane ani logowane odpowiedź modelu, obraz, uwagi czy sekrety. Rozbieżność schematu potwierdzono offline; brak zachowanej odpowiedzi z poprzedniej próby uniemożliwia wskazanie konkretnego odrzuconego pola tamtej analizy.
+
 ## Krótki test w Photopea po publikacji
 
 Otworzyć miniaturkę, połączyć dostęp prywatnym kluczem, kliknąć ANALIZUJ, rozwinąć INSTRUKCJA, oznaczyć jedną poradę jako ZROBIONE, inną jako PORZUĆ, wykonać zmianę w grafice i kliknąć ANALIZUJ PONOWNIE. Sprawdzić nową ocenę oraz nowe karty. Jeśli wynik nie wymaga zmian, powinien pojawić się komunikat „Brak koniecznych poprawek”. Test wykonuje płatne analizy i zużywa dwa miejsca w limicie.

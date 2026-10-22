@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
 import contract from '../ai-review-contract.js';
+import Ajv from 'ajv';
 import {createWorker, validateRequest, openAIRequest} from '../worker/ai-review-worker.mjs';
 
 const migration = await readFile(new URL('../worker/migrations/001-ai-review.sql', import.meta.url), 'utf8');
@@ -34,6 +35,67 @@ function request(body = payload(), options = {}) {
 function fixture(result = review(), status = 'completed') {
   return new Response(JSON.stringify({status, output: [{type: 'message', content: [{type: 'output_text', text: JSON.stringify(result)}]}]}));
 }
+
+const schemaValid = new Ajv({strict: true}).compile(contract.schema);
+test('schema rejects invalid field fixtures before normalization', () => {
+  const cases = [
+    [{issueKey: 'background-left'}, 'INVALID_ISSUE_KEY'], [{id: 'bad id'}, 'INVALID_ID'],
+    [{title: 'a'.repeat(121)}, 'INVALID_TITLE'], [{reason: ''}, 'INVALID_REASON'],
+    [{instruction: ['a'.repeat(501)]}, 'INVALID_INSTRUCTION'], [{instruction: ['   ']}, 'INVALID_INSTRUCTION'],
+    [{instruction: []}, 'INVALID_INSTRUCTION'], [{category: 'unknown'}, 'INVALID_CATEGORY'], [{priority: 'urgent'}, 'INVALID_PRIORITY']
+  ];
+  for (const [change, code] of cases) {
+    const value = review([{...advice(), ...change}]);
+    assert.equal(schemaValid(value), false, code);
+    assert.throws(() => contract.normalizeReview(value), error => error.validationCode === code);
+  }
+  for (const [change, code] of [[{summary: '  '}, 'INVALID_SUMMARY'], [{summary: 'a'.repeat(501)}, 'INVALID_SUMMARY'],
+    [{strengths: ['']}, 'INVALID_STRENGTH'], [{strengths: ['a'.repeat(201)]}, 'INVALID_STRENGTH'],
+    [{score: 11}, 'INVALID_SCORE'], [{strengths: Array(4).fill('ok')}, 'INVALID_STRENGTHS']]) {
+    const value = {...review(), ...change}; assert.equal(schemaValid(value), false, code);
+    assert.throws(() => contract.normalizeReview(value), error => error.validationCode === code);
+  }
+  const valid = review([{...advice(), issueKey: 'background_left'}]);
+  assert.equal(schemaValid(valid), true); assert.deepEqual(contract.normalizeReview(valid), valid);
+  for (const field of ['summary', 'strengths', 'improvements', 'score']) {
+    const value = review(); delete value[field]; assert.equal(schemaValid(value), false);
+    assert.throws(() => contract.normalizeReview(value), error => error.validationCode === 'INVALID_OBJECT');
+  }
+});
+
+test('semantic uniqueness and UTF-16 limits remain enforced beyond JSON Schema', () => {
+  for (const [second, code] of [[{...advice(), issueKey: 'different'}, 'DUPLICATE_ID'],
+    [{...advice(), id: 'different'}, 'DUPLICATE_ISSUE_KEY']]) {
+    const value = review([advice(), second]); assert.equal(schemaValid(value), true);
+    assert.throws(() => contract.normalizeReview(value), error => error.validationCode === code);
+  }
+  const value = review([{...advice(), title: '😀'.repeat(61)}]);
+  assert.equal(schemaValid(value), true); // JSON Schema counts code points, JS length counts UTF-16 units.
+  assert.throws(() => contract.normalizeReview(value), error => error.validationCode === 'INVALID_TITLE');
+});
+
+test('worker diagnostics expose only fixed stages and validation codes', async () => {
+  const cases = [
+    [review([{...advice(), issueKey: 'private-content-invalid'}]), 'review_validation', 'INVALID_ISSUE_KEY'],
+    [review([{...advice(), title: 'a'.repeat(121)}]), 'review_validation', 'INVALID_TITLE']
+  ];
+  for (const [value, stage, validationCode] of cases) {
+    const {env, sqlite} = setup();
+    const response = await createWorker({fetchUpstream: async () => fixture(value)}).fetch(request(), env);
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.deepEqual(body, {error: {code: 'OPENAI_INVALID_RESULT', stage, validationCode}});
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM ai_review_attempts WHERE state='failed'").get().n, 1);
+    assert.ok(!JSON.stringify(body).includes('private-content'));
+  }
+  for (const [response, stage, validationCode] of [
+    [new Response('private broken envelope'), 'envelope_decode', 'INVALID_ENVELOPE_JSON'],
+    [new Response(JSON.stringify({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'private broken review'}]}]})), 'review_decode', 'INVALID_REVIEW_JSON']
+  ]) {
+    const {env} = setup(); const result = await createWorker({fetchUpstream: async () => response}).fetch(request(), env);
+    assert.deepEqual(await result.json(), {error:{code:'OPENAI_INVALID_RESULT',stage,validationCode}});
+  }
+});
 test('review accepts 0–7 necessary improvements and sorts priority', () => {
   for (let count = 0; count <= 7; count++) assert.equal(contract.normalizeReview(review(Array.from({length: count}, (_, i) => advice('imp_' + i)))).improvements.length, count);
   const result = contract.normalizeReview(review([advice('low', 'low'), advice('high', 'high'), advice('medium', 'medium')]));

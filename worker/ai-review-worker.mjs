@@ -4,7 +4,8 @@ const MODEL = 'gpt-4.1-mini-2025-04-14';
 const MAX_METADATA_BYTES = 128 * 1024;
 const encoder = new TextEncoder();
 class ApiError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code; }
+  constructor(status, code, stage, validationCode) { super(code); this.status = status; this.code = code;
+    if (stage) this.diagnostic = {stage, validationCode}; }
 }
 function check(condition) { if (!condition) throw new ApiError(400, 'INVALID_REQUEST'); }
 function exactObject(value, keys) {
@@ -203,21 +204,25 @@ export function createWorker({fetchUpstream = (...args) => fetch(...args)} = {})
           if (!response.ok) throw new ApiError(502, response.status === 429 ? 'OPENAI_RATE_LIMIT' : 'OPENAI_UNAVAILABLE');
           let envelope;
           try { envelope = JSON.parse(new TextDecoder().decode(await readBytes(response, 192 * 1024))); }
-          catch (_) { throw new ApiError(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'OPENAI_TIMEOUT' : 'OPENAI_INVALID_RESULT'); }
+          catch (_) { throw new ApiError(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'OPENAI_TIMEOUT' : 'OPENAI_INVALID_RESULT', 'envelope_decode', 'INVALID_ENVELOPE_JSON'); }
           if (controller.signal.aborted) throw new ApiError(504, 'OPENAI_TIMEOUT');
           if (!envelope || envelope.status !== 'completed' || !Array.isArray(envelope.output)) throw new ApiError(502, 'OPENAI_INCOMPLETE');
           const parts = envelope.output.filter(item => item.type === 'message').flatMap(item => item.content || []);
           if (parts.some(part => part.type === 'refusal')) throw new ApiError(422, 'OPENAI_REFUSAL');
-          let result;
-          try { result = contract.normalizeReview(JSON.parse(parts.filter(part => part.type === 'output_text').map(part => part.text).join(''))); }
-          catch (_) { throw new ApiError(502, 'OPENAI_INVALID_RESULT'); }
+          let result, reviewJson;
+          try { reviewJson = JSON.parse(parts.filter(part => part.type === 'output_text').map(part => part.text).join('')); }
+          catch (_) { throw new ApiError(502, 'OPENAI_INVALID_RESULT', 'review_decode', 'INVALID_REVIEW_JSON'); }
+          try { result = contract.normalizeReview(reviewJson); }
+          catch (error) { throw new ApiError(502, 'OPENAI_INVALID_RESULT', 'review_validation',
+            contract.validationCodes.includes(error.validationCode) ? error.validationCode : 'INVALID_REVIEW'); }
           attemptState = 'completed'; return reply(result);
         } finally {
           clearTimeout(timer);
           try { await env.REVIEW_DB.prepare('UPDATE ai_review_attempts SET state=? WHERE id=?').bind(attemptState, id).run(); } catch (_) {}
         }
       } catch (error) {
-        return reply({error: {code: error instanceof ApiError ? error.code : 'INTERNAL_ERROR'}}, error instanceof ApiError ? error.status : 500,
+        return reply({error: {code: error instanceof ApiError ? error.code : 'INTERNAL_ERROR',
+          ...(error instanceof ApiError && error.diagnostic ? error.diagnostic : {})}}, error instanceof ApiError ? error.status : 500,
           error instanceof ApiError && error.status === 429 ? {'Retry-After': String(retryAfter(error.code))} : {});
       }
     }
