@@ -67,6 +67,11 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     });
     await page.goto('http://127.0.0.1:' + server.address().port);
     const frame = page.frameLocator('#plugin'), ui = name => frame.locator('#aiReview' + name);
+    async function reloadPanel() {
+      const navigation = page.waitForEvent('framenavigated', candidate => candidate.url().includes('/plugin.html'));
+      await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
+      await navigation;
+    }
     await ui('PreviewStatus').filter({hasText: '64 × 36 px'}).waitFor();
     assert.equal(await ui('Notes').getAttribute('placeholder'), null);
     await ui('KeyInput').fill(key); await ui('SaveKey').click();
@@ -95,7 +100,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     await page.evaluate(() => { version=1; });
     await ui('Capture').click(); await ui('PreviewStatus').filter({hasText:'64 × 36 px'}).waitFor();
     // Flush pending IndexedDB writes by reloading the panel in the same Photopea tab.
-    await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
+    await reloadPanel();
     await ui('Score').filter({hasText:'8.6 / 10'}).waitFor();
     await ui('AccessStatus').filter({hasText:'Połączono'}).waitFor();
     assert.equal(await cards.nth(0).getAttribute('data-status'), 'done');
@@ -116,7 +121,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     failure = 'UNAUTHORIZED'; await ui('Analyze').click();
     await ui('AccessStatus').filter({hasText:'Brak dostępu'}).waitFor();
     assert.match(await ui('Score').innerText(), /9.2/); assert.equal(await ui('PreviewImage').isVisible(), true);
-    await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
+    await reloadPanel();
     await ui('AccessStatus').filter({hasText:'Brak dostępu'}).waitFor();
     await ui('Score').filter({hasText:'9.2 / 10'}).waitFor();
     failure = null; await ui('KeyInput').fill(key); await ui('SaveKey').click();
