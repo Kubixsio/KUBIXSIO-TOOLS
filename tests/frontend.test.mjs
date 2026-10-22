@@ -73,6 +73,9 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     await ui('AccessStatus').filter({hasText: 'Połączono'}).waitFor();
     assert.equal(await ui('KeyInput').inputValue(), ''); assert.equal(accessCalls, 1);
     await ui('Notes').fill('Zachowaj spokojne kolory.');
+    await ui('Capture').click(); await ui('PreviewStatus').filter({hasText: '64 × 36 px'}).waitFor();
+    assert.equal(await ui('Notes').inputValue(), 'Zachowaj spokojne kolory.');
+    assert.equal(calls.length, 0, 'Refreshing the same document must preserve notes without calling AI.');
     // Two synchronous clicks exercise the internal guard, not only the disabled UI.
     await ui('Analyze').evaluate(element => { element.click(); element.click(); });
     await ui('Score').filter({hasText: '8.6 / 10'}).waitFor();
