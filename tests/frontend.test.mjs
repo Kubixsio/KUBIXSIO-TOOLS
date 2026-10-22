@@ -148,6 +148,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     // Review capture owns the binary gate and queues scripts from existing features.
     await ui('Capture').click();
     const actualFrame = page.frames().find(candidate => candidate.url().includes('/plugin.html'));
+    await actualFrame.waitForFunction(() => window.ktxSaveToOEGate.owner === 'ai-review');
     await actualFrame.evaluate(() => window.postScript('app.echoToOE("KTX_EXTERNAL_TEST");'));
     await ui('PreviewStatus').filter({hasText:'Third.psd'}).waitFor();
     await previewReady();
