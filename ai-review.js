@@ -163,7 +163,7 @@
     if (busy) return; busy = true; controls(); clearTimeout(notesTimer);
     status(elements.PreviewStatus, 'Pobieranie podglądu...');
     try {
-      await saved(session.setNotes(elements.Notes.value));
+      if (session.getState().meta) await saved(session.setNotes(elements.Notes.value));
       var captured = await session.capture();
       await saved(session.acceptPreview(captured));
       status(elements.PreviewStatus, captured.meta.name + ' • ' + captured.meta.width + ' × ' + captured.meta.height + ' px');
