@@ -166,7 +166,8 @@
     // stable; the parent-page map survives panel reloads without changing it.
     return 'try{var d=app.activeDocument;if(!d)throw new Error("Brak otwartego dokumentu w Photopea.");' +
       'var source=String(d.source||"");if(!source)throw new Error("Photopea nie wskazała źródła dokumentu.");' +
-      'var entries=window.ktxAiReviewDocuments||(window.ktxAiReviewDocuments=[]),matches=0;' +
+      // Photopea can copy an array returned by ||; mutate the stored array directly.
+      'if(!window.ktxAiReviewDocuments)window.ktxAiReviewDocuments=[];var entries=window.ktxAiReviewDocuments,matches=0;' +
       'for(var j=0;j<app.documents.length;j++)if(String(app.documents[j].source)===source)matches++;' +
       'if(matches!==1)throw new Error("Otwórz tę miniaturkę tylko raz, aby pobrać jej podgląd.");' +
       'for(var i=entries.length-1;i>=0;i--){var found=false;for(var j=0;j<app.documents.length;j++)if(entries[i].source===String(app.documents[j].source))found=true;if(!found)entries.splice(i,1);}' +

@@ -196,7 +196,7 @@ export function createWorker({fetchUpstream = (...args) => fetch(...args)} = {})
         const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 35000);
         try {
           let response;
-          try { response = await fetchUpstream('https://api.openai.com/v1/responses', {method: 'POST', redirect: 'error',
+          try { response = await fetchUpstream('https://api.openai.com/v1/responses', {method: 'POST', redirect: 'manual',
             headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + env.OPENAI_API_KEY},
             body: JSON.stringify(openAIRequest(input)), signal: controller.signal}); }
           catch (_) { throw new ApiError(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'OPENAI_TIMEOUT' : 'OPENAI_UNAVAILABLE'); }
