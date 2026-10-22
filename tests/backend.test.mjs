@@ -113,23 +113,30 @@ test('legacy daily and monthly usage survive the migration', async () => {
 test('failed, incomplete, refused and invalid upstream responses consume a slot and expose no secrets', async () => {
   const cases = [
     {fetch: async () => { throw new Error(key); }, code: 'OPENAI_UNAVAILABLE'},
+    {fetch: async () => new Response(null, {status: 307, headers: {Location: 'https://untrusted.example'}}), code: 'OPENAI_UNAVAILABLE'},
     {fetch: async () => fixture(review(), 'incomplete'), code: 'OPENAI_INCOMPLETE'},
     {fetch: async () => fixture({...review(), score: 999}), code: 'OPENAI_INVALID_RESULT'},
     {fetch: async () => new Response(JSON.stringify({status: 'completed', output: [{type: 'message', content: [{type: 'refusal', refusal: key}]}]})), code: 'OPENAI_REFUSAL'}
   ];
   for (const entry of cases) {
-    const {env, sqlite} = setup(); const response = await createWorker({fetchUpstream: entry.fetch}).fetch(request(), env);
+    const {env, sqlite} = setup(); let calls = 0;
+    const response = await createWorker({fetchUpstream: async (...args) => { calls++; return entry.fetch(...args); }}).fetch(request(), env);
     const text = await response.text(); assert.equal(JSON.parse(text).error.code, entry.code); assert.ok(!text.includes(key));
+    assert.equal(calls, 1, 'Failed upstream requests must never be followed or retried.');
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM ai_review_attempts').get().n, 1);
     assert.equal(sqlite.prepare('SELECT state FROM ai_review_attempts').get().state, 'failed');
   }
 });
 test('AI request uses only the fixed official endpoint, server key and complete structured result', async () => {
   const {env} = setup(); let seen;
-  const worker = createWorker({fetchUpstream: async (url, options) => { seen = {url, options}; return fixture(review([advice()])); }});
+  const worker = createWorker({fetchUpstream: async (url, options) => {
+    // Workers rejects redirect:error before sending anything; Node's fetch accepts it.
+    if (!['follow', 'manual'].includes(options.redirect)) throw new TypeError('Invalid Workers redirect mode');
+    seen = {url, options}; return fixture(review([advice()]));
+  }});
   const response = await worker.fetch(request(), env);
   assert.equal(response.status, 200); assert.equal((await response.json()).score, 8.6);
-  assert.equal(seen.url, 'https://api.openai.com/v1/responses'); assert.equal(seen.options.redirect, 'error');
+  assert.equal(seen.url, 'https://api.openai.com/v1/responses'); assert.equal(seen.options.redirect, 'manual');
   assert.equal(seen.options.headers.Authorization, 'Bearer offline-server-secret');
   assert.ok(!JSON.stringify(JSON.parse(seen.options.body)).includes(key));
 });
