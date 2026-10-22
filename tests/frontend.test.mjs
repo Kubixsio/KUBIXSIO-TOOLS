@@ -72,6 +72,9 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
       await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
       await navigation;
     }
+    async function previewReady() {
+      await page.waitForFunction(() => !document.getElementById('plugin').contentWindow.document.getElementById('aiReviewCapture').disabled);
+    }
     await ui('PreviewStatus').filter({hasText: '64 × 36 px'}).waitFor();
     assert.equal(await ui('Notes').getAttribute('placeholder'), null);
     await ui('KeyInput').fill(key); await ui('SaveKey').click();
@@ -79,6 +82,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     assert.equal(await ui('KeyInput').inputValue(), ''); assert.equal(accessCalls, 1);
     await ui('Notes').fill('Zachowaj spokojne kolory.');
     await ui('Capture').click(); await ui('PreviewStatus').filter({hasText: '64 × 36 px'}).waitFor();
+    await previewReady();
     assert.equal(await ui('Notes').inputValue(), 'Zachowaj spokojne kolory.');
     assert.equal(calls.length, 0, 'Refreshing the same document must preserve notes without calling AI.');
     // Two synchronous clicks exercise the internal guard, not only the disabled UI.
@@ -99,6 +103,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     await frame.locator('#aiReview').screenshot({path: new URL('test-results/ai-review.png', root).pathname.replace(/^\/(?=[A-Za-z]:)/,'')});
     await page.evaluate(() => { version=1; });
     await ui('Capture').click(); await ui('PreviewStatus').filter({hasText:'64 × 36 px'}).waitFor();
+    await previewReady();
     // Flush pending IndexedDB writes by reloading the panel in the same Photopea tab.
     await reloadPanel();
     await ui('Score').filter({hasText:'8.6 / 10'}).waitFor();
@@ -128,6 +133,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     await ui('AccessStatus').filter({hasText:'Połączono'}).waitFor();
     await page.evaluate(() => changeDocument('Other.psd')); await ui('Capture').click();
     await ui('PreviewStatus').filter({hasText:'Other.psd'}).waitFor();
+    await previewReady();
     assert.equal(await ui('Result').isVisible(), false); assert.equal(await ui('Notes').inputValue(), '');
     result = firstResult; await ui('Analyze').click(); await ui('Score').filter({hasText:'8.6 / 10'}).waitFor();
     assert.equal(calls.at(-1).previous, null); assert.deepEqual(calls.at(-1).discardedImprovements, []);
@@ -144,6 +150,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     const actualFrame = page.frames().find(candidate => candidate.url().includes('/plugin.html'));
     await actualFrame.evaluate(() => window.postScript('app.echoToOE("KTX_EXTERNAL_TEST");'));
     await ui('PreviewStatus').filter({hasText:'Third.psd'}).waitFor();
+    await previewReady();
     assert.equal(await page.evaluate(() => receivedScripts.at(-1)), 'app.echoToOE("KTX_EXTERNAL_TEST");');
     assert.deepEqual(errors, []);
   } finally {
