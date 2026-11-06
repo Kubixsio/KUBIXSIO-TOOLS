@@ -16,8 +16,9 @@ const harness = `<!doctype html><html><body style="margin:0;background:#15171b">
 <iframe id="plugin" src="/plugin.html" style="width:430px;height:1400px;border:0"></iframe>
 <script>
 var version=0, receivedScripts=[], plugin=document.getElementById('plugin');
-var documentSequence=0;
-function documentFixture(name){return {name:name,source:'local,'+(documentSequence++)+','+name,width:64,height:36,saveToOE:function(){
+var documentSequence=0, layerFixture=[{name:'Scalony obraz',kind:'LayerKind.NORMAL',visible:true,bounds:[0,0,64,36]}];
+function documentFixture(name){return {name:name,source:'local,'+(documentSequence++)+','+name,width:64,height:36,
+get layers(){return layerFixture;},saveToOE:function(){
   var canvas=document.createElement('canvas');canvas.width=64;canvas.height=36;var ctx=canvas.getContext('2d');
   ctx.fillStyle=version?'#777777':'#eeeeee';ctx.fillRect(0,0,64,36);
   var bytes=Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1]),c=>c.charCodeAt(0));
@@ -52,6 +53,12 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
       response.setHeader('Content-Type', path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'text/html');
       if (path === '/') { response.end(harness); return; }
       if (path === '/ai-review-config.js') { response.end("window.ktxAiReviewConfig={endpoint:location.origin+'/analyze'};"); return; }
+      if (path === '/photopea-layer-tree.js') {
+        // The offline parent emulates Photopea at localhost. Production still requires its exact origin.
+        const source = await readFile(new URL(path.slice(1), root), 'utf8');
+        response.end(source.replace("const origin = 'https://www.photopea.com';", "const origin = " + JSON.stringify('http://' + request.headers.host) + ';'));
+        return;
+      }
       if (!/^\/[a-zA-Z0-9.-]+$/.test(path)) throw new Error('Invalid local path');
       response.end(await readFile(new URL(path.slice(1), root)));
     } catch (_) { response.statusCode = 404; response.end('Not found'); }
@@ -89,6 +96,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     await ui('Analyze').evaluate(element => { element.click(); element.click(); });
     await ui('Score').filter({hasText: '8.6 / 10'}).waitFor();
     assert.equal(calls.length, 1); assert.equal(calls[0].previous, null); assert.equal(calls[0].notes, 'Zachowaj spokojne kolory.');
+    assert.deepEqual(calls[0].layerTree.layers.map(l => [l.type, l.name, l.bounds]), [['pixel', 'Scalony obraz', [0,0,64,36]]]);
     const cards = frame.locator('.ai-review-card');
     assert.equal(await cards.count(), 3);
     assert.match(await cards.nth(0).innerText(), /high/); assert.match(await cards.nth(1).innerText(), /medium/);
@@ -101,7 +109,13 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     assert.equal(await cards.nth(1).getAttribute('data-status'), 'discarded'); assert.equal(await cards.count(), 3);
     await mkdir(new URL('test-results/', root), {recursive:true});
     await frame.locator('#aiReview').screenshot({path: new URL('test-results/ai-review.png', root).pathname.replace(/^\/(?=[A-Za-z]:)/,'')});
-    await page.evaluate(() => { version=1; });
+    await page.evaluate(() => { version=1; layerFixture=[
+      {name:'Obiekt',kind:'LayerKind.SMARTOBJECT',visible:true},
+      {name:'Napis',kind:'LayerKind.TEXT',visible:true},
+      {name:'Krzywe',kind:'LayerKind.CURVES',visible:true},
+      {name:'Pixel A',kind:'LayerKind.NORMAL',visible:true},
+      {name:'Pixel B',kind:'LayerKind.NORMAL',visible:true}
+    ]; });
     await ui('Capture').click(); await ui('PreviewStatus').filter({hasText:'64 × 36 px'}).waitFor();
     await previewReady();
     // Flush pending IndexedDB writes by reloading the panel in the same Photopea tab.
@@ -113,11 +127,15 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     assert.equal(await ui('Notes').inputValue(), 'Zachowaj spokojne kolory.');
     result = noChanges; await ui('Analyze').click(); await ui('Score').filter({hasText:'9.2 / 10'}).waitFor();
     assert.equal(calls.length, 2); assert.notEqual(calls[1].previous.image.dataUrl, calls[1].image.dataUrl);
+    assert.deepEqual(calls[1].layerTree.layers.map(l => l.type), ['smart-object', 'text', 'adjustment', 'pixel', 'pixel']);
+    assert.notDeepEqual(calls[1].layerTree, calls[0].layerTree, 'Reanalysis reads the current tree instead of restoring the previous one.');
     assert.deepEqual(calls[1].previous.improvements.map(item => item.status), ['done','discarded','pending']);
     assert.equal(calls[1].discardedImprovements[0].issueKey, 'medium_problem');
     assert.equal(await cards.count(), 0); assert.equal(await ui('NoChanges').isVisible(), true);
     assert.equal(await ui('ImprovementsTitle').isVisible(), false);
+    await page.evaluate(() => { layerFixture=null; });
     await ui('Analyze').click(); await ui('AnalysisStatus').filter({hasText:'Analiza zakończona.'}).waitFor();
+    assert.equal(calls[2].layerTree, null, 'Unavailable tree must not prevent review or resend old layers.');
     assert.equal(calls[2].previous.review.improvements.length, 0);
     assert.equal(calls[2].discardedImprovements[0].issueKey, 'medium_problem');
     result = {...noChanges, score: 100}; await ui('Analyze').click();

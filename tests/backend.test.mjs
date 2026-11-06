@@ -5,6 +5,8 @@ import {DatabaseSync} from 'node:sqlite';
 import contract from '../ai-review-contract.js';
 import Ajv from 'ajv';
 import {createWorker, validateRequest, openAIRequest} from '../worker/ai-review-worker.mjs';
+import layerMetadata from '../photopea-layer-tree.js';
+import instructionRules from '../photopea-instruction-rules.js';
 
 const migration = await readFile(new URL('../worker/migrations/001-ai-review.sql', import.meta.url), 'utf8');
 const key = 'offline-test-access-key-0123456789abcdef';
@@ -37,6 +39,74 @@ function fixture(result = review(), status = 'completed') {
 }
 
 const schemaValid = new Ajv({strict: true}).compile(contract.schema);
+
+function layerContext(kinds) {
+  return layerMetadata.normalize({layers: kinds.map((kind, position) => ({name: 'Arrow ' + position, kind,
+    visible: true, parent: null, position, bounds: [0, 0, 1, 1]})), truncated: false});
+}
+function upstreamTree(body) {
+  const context = body.input[0].content.find(part => part.type === 'input_text' && part.text.startsWith('Metadane struktury'));
+  return JSON.parse(context.text.slice(context.text.indexOf('\n') + 1)).layerTree;
+}
+
+test('first analysis and reanalysis forward only current bounded layer metadata to the mocked AI', async () => {
+  const {env, sqlite} = setup();
+  const contexts = [layerContext(['NORMAL']), layerContext(['NORMAL','NORMAL']),
+    layerContext(['SMARTOBJECT']), layerContext(['TEXT']), layerContext(['CURVES'])];
+  let upstreamCalls = 0;
+  const worker = createWorker({fetchUpstream: async (_url, options) => {
+    const actual = JSON.parse(options.body);
+    assert.deepEqual(upstreamTree(actual), contexts[upstreamCalls]);
+    assert.equal(actual.input[0].content.filter(p => p.type === 'input_image').length, upstreamCalls === 0 ? 1 : 2);
+    upstreamCalls++;
+    return fixture();
+  }});
+  try {
+    for (let i = 0; i < contexts.length; i++) {
+      const input = {...payload(), layerTree: contexts[i]};
+      if (i) input.previous = {image, review: review(), improvements: []};
+      const response = await worker.fetch(request(input), env);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), review());
+    }
+    assert.equal(upstreamCalls, contexts.length);
+  } finally { sqlite.close(); }
+});
+
+test('missing, malformed and oversized optional layer trees fall back without changing visual review', () => {
+  const valid = layerContext(['NORMAL']);
+  for (const context of [undefined, null, {}, {layers: 'wrong'},
+    {...valid, unexpectedPixels: 'x'.repeat(layerMetadata.limits.bytes)}]) {
+    const input = payload();
+    if (context !== undefined) input.layerTree = context;
+    assert.equal(validateRequest(input).layerTree, null);
+    assert.equal(upstreamTree(openAIRequest(input)), null);
+    assert.deepEqual(input.image, image);
+  }
+  const input = {...payload(), layerTree: {...valid, unexpectedPixels: 'excluded'}};
+  assert.deepEqual(validateRequest(input).layerTree, valid);
+  assert.doesNotMatch(JSON.stringify(openAIRequest(input)), /unexpectedPixels|excluded/);
+});
+
+test('server uses shared Photopea rules to constrain instruction generation without inferring object ownership', () => {
+  const body = openAIRequest({...payload(), layerTree: layerContext(['NORMAL','SMARTOBJECT','TEXT','CURVES'])});
+  const text = body.instructions.replace(/\s+/g, ' ');
+  assert.ok(body.instructions.includes(instructionRules.guidance()));
+  for (const tool of instructionRules.evaluate('saturation').tools) assert.ok(text.includes(tool));
+  assert.equal(instructionRules.evaluate('saturation', {tool: 'Brightness/Contrast'}).allowed, false);
+  assert.match(text, /Brightness\/Contrast nie zmienia nasycenia/);
+  assert.match(text, /Nazwy i bounds warstw nie potwierdzają mapowania obiekt → warstwa/);
+  assert.match(text, /Osobne pixel layers nie dowodzą izolacji obiektu/);
+  assert.match(text, /Smart Object nie ujawnia zawartości/);
+  assert.match(text, /braku metadanych, unknown, truncated=true/);
+  assert.match(text, /kopi[aę] i transformacja wymagają usunięcia lub zamaskowania starego elementu/);
+  assert.match(text, /uzupełnienia odsłoniętego miejsca/);
+  assert.match(text, /Jeśli bezpieczny retusz jest zbyt trudny lub destrukcyjny, pomiń poradę/);
+  assert.match(text, /OPACITY kopii nad identycznym widocznym oryginałem jest nieskuteczne/);
+  assert.equal(instructionRules.evaluate('move', {target: 'flattened', original: 'retained'}).allowed, false);
+  assert.equal(instructionRules.evaluate('opacity', {target: 'separate-layer', identicalOriginalBelow: true}).allowed, false);
+  assert.deepEqual(body.text.format.schema, contract.schema);
+});
 test('schema rejects invalid field fixtures before normalization', () => {
   const cases = [
     [{issueKey: 'background-left'}, 'INVALID_ISSUE_KEY'], [{id: 'bad id'}, 'INVALID_ID'],
