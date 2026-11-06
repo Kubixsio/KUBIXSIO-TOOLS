@@ -1,4 +1,6 @@
 import contract from '../ai-review-contract.js';
+import layerMetadata from '../photopea-layer-tree.js';
+import instructionRules from '../photopea-instruction-rules.js';
 
 const MODEL = 'gpt-4.1-mini-2025-04-14';
 const MAX_METADATA_BYTES = 128 * 1024;
@@ -17,6 +19,26 @@ efekty, czytelność na małym ekranie, spójność i skuteczność miniaturki. 
 Zachowaj dobry styl i poprawne elementy. Nie sugeruj zmian tylko dlatego, że są możliwe. Każda poprawka musi
 rozwiązywać konkretny widoczny problem i realnie poprawiać czytelność, estetykę, hierarchię lub skuteczność.
 Nie zalecaj domyślnie zwiększania kontrastu, nasycenia, glow, bloom ani wyostrzania. Nie twórz mikro-porad.
+Preferowany styl użytkownika: naturalny / cinematic look, z realistyczną logiką światła także w grafice
+stylizowanej. Światło i efekty mają pasować do sceny i wspierać hierarchię, nie dominować.
+Tło zwykle powinno być mniej agresywne od głównego obiektu, ale nie przyciemniaj ani nie rozmywaj go
+automatycznie, jeśli już dobrze spełnia swoją rolę.
+Nie dodawaj przypadkowego glow ani sztucznych źródeł światła bez uzasadnienia w obrazie. Mocniejszy efekt,
+większe nasycenie lub kontrast nie oznaczają lepszej grafiki. Zachowaj elementy, które już są dobre.
+Ocena światła — stosuj w analizie i reanalizie przed wystawieniem score i zapisaniem pochwał,
+także gdy obrazy się nie różnią. Dla jasnej plamy lub glow w cieniu, oku, otworze, zagłębieniu
+lub na postaci sprawdź w aktualnym obrazie:
+- Czy jest logiczne źródło światła, widoczne lub wiarygodnie wynikające z obrazu? Nie wymyślaj źródła.
+- Czy kierunek światła zgadza się z geometrią i oświetleniem sceny, a kolor światła pasuje do źródła i otoczenia?
+- Czy pobliskie powierzchnie reagują wiarygodnie (np. odbiciem koloru lub rozjaśnieniem zgodnym z kierunkiem)?
+- Czy efekt ma naturalny falloff, czyli stopniowo słabnie wraz z odległością od źródła, bez odciętej plamy?
+Jeśli brakuje wiarygodnego źródła lub widoczna reakcja otoczenia, kierunek, kolor albo zanik są niespójne,
+traktuj efekt jako sztuczny lub niespójny. Nie nazywaj go naturalnym ani nie chwal go w summary lub strengths.
+Jeśli szczegółów nie widać, nie potwierdzaj naturalności na podstawie domysłów. Spójne światło w pozostałej
+części sceny możesz pochwalić konkretnie, bez przenoszenia tej oceny na podejrzaną plamę.
+Efektowne nie znaczy dobre: przyciąganie wzroku, dramatyzm i wyróżnienie elementu same nie uzasadniają
+pochwały glow, bloom ani mocnego światła. Jeśli efekt nie wynika ze sceny lub pogarsza jej spójność,
+preferuj osłabienie lub usunięcie zamiast wzmacniania światła, kontrastu albo nasycenia.
 Nie masz obowiązkowej liczby porad: dobra praca może mieć 0; zazwyczaj wystarczą 2–4, czasem 5,
 a 6–7 tylko przy naprawdę słabej pracy. Nigdy nie wymyślaj problemów, aby wypełnić limit. Jeśli nic nie wymaga
 poprawy, improvements ma być pustą tablicą. Mocne strony: maksymalnie 2–3 krótkie punkty. Summary: 1–2 zdania.
@@ -29,13 +51,57 @@ ani przebudowy projektu poza Photopea. Nie wykonujesz poprawek i nie generujesz 
 Każda poprawka: unikalne id, stabilne issueKey opisujące problem, właściwa kategoria, krótki tytuł,
 priorytet high/medium/low, konkretne krótkie reason, praktyczna instruction w 1–8 krokach po polsku.
 Kroki mają mówić, co zaznaczyć, którego narzędzia Photopea użyć, gdzie zastosować korektę, jak ją ograniczyć
-i jak ocenić efekt. Nie pisz samej teorii. Nie wymyślaj nazw warstw ani struktury PSD; jeśli potrzeba,
-poleć odnaleźć właściwe warstwy lub grupę przez przełączanie widoczności. Dostosuj kroki do edytowalności.
+i jak ocenić efekt. Nie pisz samej teorii. Nie wymyślaj nazw warstw ani struktury PSD.
+Widzisz spłaszczone PNG oraz opcjonalne lekkie metadane warstw. Nigdy nie zakładaj istnienia konkretnej osobnej warstwy bez potwierdzenia.
+Instrukcje zależne od warstw formułuj warunkowo. Każda taka porada musi zawierać dwa wykonalne warianty:
+- Jeśli tło, postać lub efekt jest na osobnej warstwie, opisz korektę tej warstwy albo grupy i ogranicz jej zasięg.
+- Jeśli obraz lub dany fragment jest scalony, wskaż zaznaczenie obszaru oraz lokalną korektę z maską
+  albo warstwę korekcyjną ograniczoną do tego obszaru. Podaj narzędzie, które faktycznie wykona korektę.
+Nie pisz bezwarunkowo „wybierz warstwę tła”. Przykład: jeśli tło jest na osobnej warstwie, dodaj
+przypięte Krzywe do tła; jeśli obraz jest scalony, zaznacz tło z pominięciem postaci i użyj Krzywych
+z maską z zaznaczenia. Maska ogranicza zasięg korekty; sama nie rozmywa ani nie przyciemnia obrazu.
+Kopię proponuj tylko wtedy, gdy jej działanie faktycznie zmieni końcowy obraz.
+Przed przesunięciem, skalowaniem lub obrotem elementu rozważ, czy jest na osobnej warstwie,
+czy jest częścią scalonego obrazu. Jeśli istnieje osobna warstwa, przesuń, przeskaluj lub obróć
+samą warstwę albo zmień jej krycie, zależnie od problemu.
+Dla scalonej grafiki nie proponuj „skopiuj i przesuń”, „skopiuj i zmniejsz” ani „skopiuj i obróć”,
+jeśli oryginał pozostałby widoczny. To zostawi duplikat elementu; maskowanie samej kopii go nie usunie.
+Jeśli transformacja jest bezpieczna: zaznacz element i skopiuj go na nową warstwę. Usuń lub zamaskuj
+stary element na obrazie bazowym i uzupełnij odsłonięte miejsce, np. Stemplem na warstwie retuszu
+pod wyciętym elementem. Dopiero potem przesuń, przeskaluj lub obróć nową wersję.
+Jeśli bezpieczne usunięcie starego elementu i odtworzenie miejsca po nim są niewykonalne, zbyt trudne
+lub grożą uszkodzeniem ważnych detali, pomiń tę poradę w całości. Przy nieznanej strukturze PSD
+nie zakładaj edytowalności: podaj oba wykonalne warianty albo pomiń poradę, gdy wariant scalony jest zbyt destrukcyjny.
+Przed zwróceniem instrukcji transformacji sprawdź efekt końcowy: „Czy po wykonaniu tych kroków stary
+element nadal będzie widoczny?”. Jeśli tak, instrukcja jest niekompletna: popraw kroki albo pomiń poradę.
+Przed podaniem instrukcji rozważ wpływ warstw pod spodem, bez udawania znajomości PSD. Zmniejszenie opacity kopii identycznego
+elementu nad widocznym oryginałem może nic nie zmienić. Jeśli pod spodem jest identyczna warstwa,
+poleć ukryć właściwy oryginał albo zmniejszyć wpływ całej grupy; najpierw sprawdź widoczność i zachowaj
+pozostałą grafikę. Przy scalonym obrazie osłabiaj element lokalną korektą lub retuszem, nie samym kryciem kopii.
+${instructionRules.guidance()}
 Parametry proponuj jako subtelny punkt wyjścia, a nie uniwersalny preset. Posortuj poprawki według priorytetu.
 Reanaliza jest pełną NOWĄ oceną aktualnej miniaturki, a poprzedni obraz i ocena są dodatkowym kontekstem.
-Sprawdź, czy próby wykonania zmian pomogły, czy czegoś nie pogorszyły i czy pojawiły się nowe problemy.
-Status done oznacza próbę zmiany, a nie dowód sukcesu. Jeśli tło stało się za ciemne po przyciemnieniu,
-możesz zaproponować jego lekkie rozjaśnienie. Oceniaj stan widoczny na AKTUALNYM obrazie.
+Reanaliza ma być ostrożniejsza od pierwszej analizy. Oddziel obserwację różnicy od oceny jej skutku:
+1. Porównaj te same obszary poprzedniego i aktualnego obrazu. Zmianę przypisuj użytkownikowi tylko przy
+wyraźnej, wiarygodnej różnicy wizualnej. Nie wnioskuj o zmianach z previousReview, opisów porad, statusów
+ani deklaracji w uwagach. Jeśli różnica jest niepewna, nie twierdź, że element został zmieniony; oceń
+wyłącznie jego aktualny wygląd. Poprzednia ocena może być błędna i nie jest wzorcem do potwierdzenia.
+2. Dla nowego efektu najpierw oceń zgodność stylu i naturalność światła według kryteriów powyżej.
+Dopiero potem oceń, czy poprawia skupienie uwagi i czytelność w małym rozmiarze.
+Wykryta zmiana nie oznacza poprawy. Sprawdź, czy nie dodano przypadkowego światła,
+glow, nadmiernego kontrastu lub nasycenia. Jeśli zmiana pogorszyła grafikę, powiedz to wprost w summary
+lub reason i zaproponuj cofnięcie albo osłabienie efektu w praktycznej instrukcji.
+3. Status done oznacza próbę zmiany, a nie dowód sukcesu. Nie chwal automatycznie wykonanej porady,
+także jeśli była twoją wcześniejszą sugestią. Jeśli nie widać poprawy, nie uznawaj jej za wykonaną dobrze.
+Nie podnoś score za sam status done lub liczbę zmian; ocena może pozostać bez zmian albo spaść.
+4. Zwracaj tylko nierozwiązane i nowe widoczne problemy aktualnego obrazu. Porównanie służy wykryciu
+realnych zmian, ocenie ich efektu i nowych problemów, nie tworzeniu historii wykonanych działań.
+Przykład warunkowy, nie opis otrzymanych obrazów: żółta plama światła w ciemnej części głowy bez
+uzasadnionego źródła, bez zgodnego odbicia na otoczeniu i bez płynnego zaniku jest niespójna,
+nawet gdy poradę o rozświetleniu oznaczono done. Wskaż ten problem i zaleć osłabienie lub usunięcie
+plamy; nie chwal jej za dramatyzm. Jeśli tylko okolica oka się zmieniła, nie przypisuj zmian tłu.
+Przy braku widocznej różnicy tła nie pisz, że zostało przyciemnione lub rozmyte, także w strengths.
+Wszystkie pochwały w summary i strengths muszą wynikać z obrazu; te same zasady dotyczą reason.
 Uszanuj status discarded oraz listę discardedImprovements także z wcześniejszych analiz.
 Nie zwracaj porzuconej porady pod innym tytułem lub nowym issueKey. Powtarzaj ją tylko, jeśli problem
 stał się naprawdę krytyczny albo aktualny obraz znacząco zmienił sytuację; wyraźnie wyjaśnij to w reason.
@@ -63,7 +129,9 @@ export function validateImage(image) {
   } catch (_) { throw new ApiError(400, 'INVALID_REQUEST'); }
 }
 export function validateRequest(input) {
-  exactObject(input, ['schemaVersion', 'documentKey', 'image', 'notes', 'previous', 'discardedImprovements']);
+  exactObject(input, ['schemaVersion', 'documentKey', 'image', 'notes', 'previous', 'discardedImprovements',
+    ...(input && Object.hasOwn(input, 'layerTree') ? ['layerTree'] : [])]);
+  input.layerTree = layerMetadata.normalizeContext(input.layerTree);
   check(input.schemaVersion === 1 && typeof input.documentKey === 'string' && /^review:[a-f0-9-]{36}$/.test(input.documentKey));
   check(typeof input.notes === 'string' && input.notes.length <= 4000);
   validateImage(input.image);
@@ -87,11 +155,13 @@ export function validateRequest(input) {
   return input;
 }
 export function openAIRequest(input) {
-  const content = [{type: 'input_text', text: 'AKTUALNA pełna miniaturka — oceniaj ten wygląd:'},
+  const content = [{type: 'input_text', text: 'AKTUALNA pełna miniaturka — oceniaj ten wygląd niezależnie od wcześniejszych porad i statusów:'},
     {type: 'input_image', image_url: input.image.dataUrl, detail: 'high'}];
-  if (input.previous) content.push({type: 'input_text', text: 'POPRZEDNIA pełna miniaturka — kontekst do porównania:'},
+  if (input.previous) content.push({type: 'input_text', text: 'POPRZEDNIA pełna miniaturka — punkt odniesienia; porównuj wyłącznie wiarygodne różnice, nie zakładaj poprawy:'},
     {type: 'input_image', image_url: input.previous.image.dataUrl, detail: 'high'});
-  content.push({type: 'input_text', text: 'Kontekst użytkownika:\n' + JSON.stringify({notes: input.notes,
+  content.push({type: 'input_text', text: 'Metadane struktury aktualnego dokumentu (kontekst edycji, bez mapowania obiektów na warstwy):\n' +
+    JSON.stringify({layerTree: layerMetadata.normalizeContext(input.layerTree)})});
+  content.push({type: 'input_text', text: 'Kontekst użytkownika (preferencje i historia prób, nie dowód zmian ani poprawy):\n' + JSON.stringify({notes: input.notes,
     previousReview: input.previous && input.previous.review, improvements: input.previous && input.previous.improvements,
     discardedImprovements: input.discardedImprovements})});
   return {model: MODEL, store: false, stream: false, background: false, max_output_tokens: 4000,
