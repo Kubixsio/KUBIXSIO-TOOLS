@@ -139,11 +139,19 @@
     });
   }
   async function preparePayload(snapshot, captured, notes) {
+    var layerTree = null;
+    try {
+      var reader = window.ktxPhotopeaLayerTree;
+      if (reader) layerTree = reader.normalizeContext(await reader.readActiveDocument(captured.meta.source));
+    } catch (error) {
+      if (error.code === 'DOCUMENT_CHANGED') throw error;
+      // Metadata is optional. Never reuse a tree from an earlier analysis or another document.
+    }
     var comparable = snapshot.meta && snapshot.meta.documentKey === captured.meta.documentKey && snapshot.reviewResult && snapshot.reviewedPreviewPng;
     var estimatedBytes = Math.ceil(captured.png.size / 3) * 4 + (comparable ? Math.ceil(snapshot.reviewedPreviewPng.size / 3) * 4 : 0);
     if (estimatedBytes > contract.maxPayloadBytes) throw apiError('PAYLOAD_TOO_LARGE');
     var payload = {schemaVersion: 1, documentKey: captured.meta.documentKey, image: await imageData(captured.png, captured.meta),
-      notes: notes, previous: null, discardedImprovements: comparable ? snapshot.discardedImprovements.map(function (item) {
+      notes: notes, layerTree: layerTree, previous: null, discardedImprovements: comparable ? snapshot.discardedImprovements.map(function (item) {
         return {issueKey: item.issueKey, category: item.category, title: item.title};
       }) : []};
     if (comparable) {
