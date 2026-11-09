@@ -13,8 +13,9 @@ const core = await readFile(new URL('plugin-v35-core.js', root), 'utf8');
 const extra = await readFile(new URL('plugin-v35-extra.js', root), 'utf8');
 
 for (const mode of ['corner', 'full']) {
-  for (const opacity of [mode === 'corner' ? 70 : 50, 0, 100]) {
+  for (const opacity of [mode === 'corner' ? 70 : 50, 35, 0, 100]) {
     test(`${mode} watermark at ${opacity}% uses the chosen asset and preserves existing document layers`, () => {
+      const writes = []; let rasterized = false, active;
       const old = {id: 1, name: 'Background', isBackgroundLayer: true};
       const doc = {name: 'Miniaturka', width: unit(600), height: unit(900), layers: [old]};
       let script, opened, listener;
@@ -31,15 +32,35 @@ for (const mode of ['corner', 'full']) {
       vm.runInNewContext(script, env);
       assert.equal(opened, mode === 'corner' ? 'https://kubixsio.github.io/KUBIXSIO-TOOLS/watermarkFULLHD.png' : 'https://example.test/watermark-full.png');
       let box = [13, 19, 1293, 739];
-      const added = {id: 2, name: 'Imported PNG', get bounds() { return box.map(unit); }, rasterize() {},
+      const added = {id: 2, name: 'Imported PNG', get bounds() { return box.map(unit); }, rasterize() { rasterized = true; },
         resize(x, y) { box = [box[0], box[1], box[0] + (box[2]-box[0])*x/100, box[1] + (box[3]-box[1])*y/100]; },
         translate(x, y) { box = box.map((v, i) => v + (i % 2 ? y : x)); }};
       doc.layers.unshift(added);
+      const backing = [added, old];
+      const wrapper = layer => new Proxy(layer, {
+        set(target, key, value) {
+          if (key === 'opacity' || key === 'blendMode') {
+            assert.equal(active.id, added.id);
+            assert.equal(rasterized, true);
+            writes.push([key, value]);
+          }
+          target[key] = value; return true;
+        }
+      });
+      Object.defineProperty(doc, 'layers', {get: () => backing.map(wrapper)});
+      Object.defineProperty(doc, 'activeLayer', {get: () => wrapper(active), set: layer => { active = backing.find(l => l.id === layer.id); }});
+      assert.notEqual(doc.layers[0], doc.layers[0], 'Photopea returns fresh wrappers');
+
       listener({data: 'done'});
       vm.runInNewContext(script, env);
+      assert.match(script, /doc\.activeLayer\.opacity = job\.opacity/);
+      assert.ok(script.includes('"opacity":' + opacity));
+      assert.match(script, /doc\.activeLayer\.blendMode = BlendMode\.OVERLAY/);
+      assert.doesNotMatch(script, /doc\.layers\[0\]\s*!==\s*layer/);
       assert.equal(added.opacity, opacity);
+      assert.deepEqual(writes, mode === 'full' ? [['opacity', opacity], ['blendMode', 'overlay']] : [['opacity', opacity]]);
       assert.equal(added.name, mode === 'full' ? 'WATERMARK NA CAŁOŚĆ' : 'WATERMARK');
-      assert.deepEqual(doc.layers, [added, old]);
+      assert.deepEqual(doc.layers.map(l => [l.id,l.name]), [[2,added.name],[1,old.name]]);
       if (mode === 'full') { assert.equal(added.blendMode, 'overlay'); assert.deepEqual(box, [0, 0, 600, 900]); }
       else { assert.equal(added.blendMode, undefined); assert.deepEqual(box, [13, 19, 613, 919]); }
       assert.equal(vm.runInContext('watermarkStage', context), 'idle');
