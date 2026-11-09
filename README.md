@@ -1,4 +1,4 @@
-# KUBIXSIO TOOLS 0.0.1
+# KUBIXSIO TOOLS 0.1.0
 
 Ocena AI analizuje całą miniaturkę i zwraca ocenę, krótkie podsumowanie, mocne strony oraz 0–7 potrzebnych poprawek z instrukcjami Photopea. Przycisk ZROBIONE oznacza próbę wykonania porady; PORZUĆ zapisuje odrzuconą poradę także dla kolejnych reanaliz. Karty pozostają widoczne do otrzymania nowego poprawnego wyniku.
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KUBIXSIO TOOLS</title>
-<link rel="stylesheet" href="plugin-v35.css?v=71">
+<link rel="stylesheet" href="plugin-v35.css?v=0.1.0">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
 <link rel="stylesheet" href="ai-review.css?v=0.0.1">
 <style>
@@ -41,7 +41,18 @@
     </div>
   </div></div>
   <div class="section"><p class="section-title">DODATKI</p><div class="grid">
-    <button type="button" onclick="runWatermark()">⌘ DODAJ WATERMARK<span class="hint">Dokładny PNG • na samą górę • 80%</span></button>
+    <details class="watermark-section" id="watermarkSection">
+      <summary>⌘ WATERMARK<span class="hint">Wybierz tryb i krycie</span></summary>
+      <div class="watermark-controls">
+        <div class="watermark-modes" role="group" aria-label="Tryb watermarka">
+          <button type="button" id="watermarkCorner" aria-pressed="true">W ROGU</button>
+          <button type="button" id="watermarkFull" aria-pressed="false">NA CAŁOŚĆ</button>
+        </div>
+        <label for="watermarkOpacity">Krycie <output id="watermarkOpacityValue" for="watermarkOpacity">70%</output></label>
+        <input id="watermarkOpacity" type="range" min="0" max="100" step="5" value="70">
+        <button type="button" id="watermarkAdd" onclick="runWatermark()">DODAJ WATERMARK</button>
+      </div>
+    </details>
     <div>
       <button type="button" id="folderButton" onclick="toggleFolderPanel()" aria-expanded="false" aria-controls="folderControls">▣ FOLDERUJ<span class="hint">Zaznacz warstwy i wybierz sposób grupowania</span></button>
       <div id="folderControls" class="folder-controls">
@@ -160,7 +171,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • 0.0.1</div>
+  <div class="footer">KUBIXSIO TOOLS • 0.1.0</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -181,7 +192,8 @@
 <script src="photopea-layer-tree.js?v=2"></script>
 <script src="photopea-instruction-rules.js?v=2"></script>
 <script src="ai-review.js?v=0.0.1-layer-context-1"></script>
-<script src="plugin-v35-extra.js?v=70"></script>
+<script src="watermark-controls.js?v=0.1.0"></script>
+<script src="plugin-v35-extra.js?v=0.1.0"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
 <script>
