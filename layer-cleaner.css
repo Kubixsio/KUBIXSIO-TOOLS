@@ -1,0 +1,12 @@
+.cleaner-panel[hidden]{display:none}
+.cleaner-panel{margin-top:9px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}
+.cleaner-status{margin:0 0 9px;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.cleaner-list{max-height:280px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.cleaner-row{display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:8px;padding:9px 1px;border-bottom:1px solid var(--border);cursor:pointer}
+.cleaner-row input{margin:0;accent-color:var(--accent)}
+.cleaner-name{font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cleaner-reason{font-size:9px;color:var(--muted);white-space:nowrap}
+.cleaner-actions{display:flex;gap:7px;margin-top:10px}
+.cleaner-actions button{padding:10px 6px;text-align:center;font-size:11px}
+#layerCleanerDelete{background:var(--accent);border-color:transparent}
+#layerCleaner button:disabled{opacity:.45;cursor:default}

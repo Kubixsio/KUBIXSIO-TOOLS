@@ -1,4 +1,10 @@
-# KUBIXSIO TOOLS 0.1.2
+# KUBIXSIO TOOLS 0.2.0
+
+Layer Cleaner najpierw skanuje dokument, a usuwa wyłącznie zaznaczone przez użytkownika pojedyncze warstwy po ich ID. Grupy zawsze pozostają. Wykrywa własną widoczność OFF, rzeczywiste opacity 0% i konserwatywnie potwierdzoną pustkę zwykłych pixel layers. ANULUJ niczego nie usuwa. Przed usuwaniem powtarza skan i odrzuca zmieniony dokument; po operacji sprawdza pozostałe ID.
+
+Do potwierdzenia pustki wykorzystuje rekordy tymczasowego PSD pobranego przez `saveToOE("psd")`, gdy istnieją warstwy pikselowe o zerowych granicach. Plik jest przetwarzany wyłącznie w pamięci przeglądarki, nie jest wysyłany do serwera ani AI. Maski, efekty, nieznane dane, nieobsługiwany format lub PSD powyżej 128 MiB wykluczają potwierdzanie pustki; ukryte warstwy i opacity 0% nadal są wykrywane. Nie eksportuje osobnych obrazów warstw. Przy błędzie usuwania należy sprawdzić warstwy i Historię przed kolejnym skanem.
+
+Pliki funkcji: `layer-cleaner.js`, `layer-cleaner-ui.js`, `layer-cleaner.css`. Opcjonalny test integracyjny: `node tests/layer-cleaner-photopea-live.cjs`, uruchamiany na izolowanym dokumencie testowym z blokadą endpointów AI. Wersja 0.2.0 jest przygotowywana lokalnie; publikacja wymaga osobnego potwierdzenia.
 
 Ocena AI analizuje całą miniaturkę i zwraca ocenę, krótkie podsumowanie, mocne strony oraz 0–7 potrzebnych poprawek z instrukcjami Photopea. Przycisk ZROBIONE oznacza próbę wykonania porady; PORZUĆ zapisuje odrzuconą poradę także dla kolejnych reanaliz. Karty pozostają widoczne do otrzymania nowego poprawnego wyniku.
 

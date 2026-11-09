@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="plugin-v35.css?v=0.1.0">
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
 <link rel="stylesheet" href="ai-review.css?v=0.0.1">
+<link rel="stylesheet" href="layer-cleaner.css?v=0.2.0">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -41,6 +42,17 @@
     </div>
   </div></div>
   <div class="section"><p class="section-title">DODATKI</p><div class="grid">
+    <div id="layerCleaner">
+      <button type="button" id="layerCleanerScan" aria-expanded="false" aria-controls="layerCleanerPanel">⌫ LAYER CLEANER<span class="hint">Skanuj warstwy i wybierz, co usunąć</span></button>
+      <div id="layerCleanerPanel" class="cleaner-panel" hidden>
+        <p id="layerCleanerStatus" class="cleaner-status" role="status" aria-live="polite"></p>
+        <div id="layerCleanerList" class="cleaner-list" role="group" aria-label="Warstwy do usunięcia"></div>
+        <div class="cleaner-actions">
+          <button type="button" id="layerCleanerCancel">ANULUJ</button>
+          <button type="button" id="layerCleanerDelete" disabled>USUŃ 0 WARSTW</button>
+        </div>
+      </div>
+    </div>
     <details class="watermark-section" id="watermarkSection">
       <summary>⌘ WATERMARK<span class="hint">Wybierz tryb i krycie</span></summary>
       <div class="watermark-controls">
@@ -171,7 +183,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • 0.1.2</div>
+  <div class="footer">KUBIXSIO TOOLS • 0.2.0</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -196,6 +208,8 @@
 <script src="plugin-v35-extra.js?v=0.1.2"></script>
 <script src="plugin-v70-folder.js?v=70"></script>
 <script src="plugin-v71-assets.js?v=91"></script>
+<script src="layer-cleaner.js?v=0.2.0"></script>
+<script src="layer-cleaner-ui.js?v=0.2.0"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
