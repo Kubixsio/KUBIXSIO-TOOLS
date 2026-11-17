@@ -1,4 +1,6 @@
-# KUBIXSIO TOOLS 0.2.0
+# KUBIXSIO TOOLS 0.3.0
+
+RASTERYZUJ skanuje dokument i pozwala zamienić wybrane Smart Objecty na warstwy pikselowe. Pomija obiekty ze Smart Filters i obiekty bez jednoznacznie odczytanych metadanych. Do weryfikacji używa tymczasowego eksportu PSD (do 128 MiB) w pamięci panelu. Po zatwierdzeniu sprawdza ponownie dokument i zachowanie masek, stylów oraz relacji clipping. Rasteryzacja korzysta ze standardowej historii Photopea. Test integracyjny można uruchomić poleceniem `node tests/rasterize-photopea-live.cjs`.
 
 Layer Cleaner najpierw skanuje dokument, a usuwa wyłącznie zaznaczone przez użytkownika pojedyncze warstwy po ich ID. Grupy zawsze pozostają. Wykrywa własną widoczność OFF, rzeczywiste opacity 0% i konserwatywnie potwierdzoną pustkę zwykłych pixel layers. ANULUJ niczego nie usuwa. Przed usuwaniem powtarza skan i odrzuca zmieniony dokument; po operacji sprawdza pozostałe ID.
 

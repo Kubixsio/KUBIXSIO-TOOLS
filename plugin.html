@@ -19,6 +19,9 @@
   .guide-stage.dragging img{cursor:grabbing}
   .guide-close{position:fixed;top:14px;right:14px;z-index:100000;width:42px;height:42px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:1px solid rgba(255,255,255,.20);border-radius:10px;background:rgba(20,24,31,.88);color:#fff;font-family:Arial,sans-serif;font-size:30px;font-weight:400;line-height:1;padding:0;margin:0;cursor:pointer;backdrop-filter:blur(6px);overflow:hidden}
   .guide-close:hover{background:#292f3a}
+  #rasterizeApply{background:var(--accent);border-color:transparent}
+  #rasterize button:disabled{opacity:.45;cursor:default}
+  #rasterize .cleaner-row{grid-template-columns:16px minmax(0,1fr)}
   html.guide-open,body.guide-open{overflow:hidden!important;width:100%!important;height:100%!important}
 </style>
 </head>
@@ -50,6 +53,17 @@
         <div class="cleaner-actions">
           <button type="button" id="layerCleanerCancel">ANULUJ</button>
           <button type="button" id="layerCleanerDelete" disabled>USUŃ 0 WARSTW</button>
+        </div>
+      </div>
+    </div>
+    <div id="rasterize">
+      <button type="button" id="rasterizeScan" aria-expanded="false" aria-controls="rasterizePanel">▧ RASTERYZUJ<span class="hint">Wybierz Smart Objecty do rasteryzacji</span></button>
+      <div id="rasterizePanel" class="cleaner-panel" hidden>
+        <p id="rasterizeStatus" class="cleaner-status" role="status"></p>
+        <div id="rasterizeList" class="cleaner-list" role="group" aria-label="Warstwy do rasteryzacji"></div>
+        <div class="cleaner-actions">
+          <button id="rasterizeCancel" type="button">ANULUJ</button>
+          <button id="rasterizeApply" type="button" disabled>RASTERYZUJ 0 WARSTW</button>
         </div>
       </div>
     </div>
@@ -183,7 +197,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • 0.2.0</div>
+  <div class="footer">KUBIXSIO TOOLS • 0.3.0</div>
 </div>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
   <div class="assets-preview-card"><button id="assetsPreviewClose" type="button" class="assets-preview-close" aria-label="Zamknij podgląd">×</button><img id="assetsPreviewImage" alt=""><p id="assetsPreviewName" class="assets-title"></p></div>
@@ -210,6 +224,9 @@
 <script src="plugin-v71-assets.js?v=91"></script>
 <script src="layer-cleaner.js?v=0.2.0"></script>
 <script src="layer-cleaner-ui.js?v=0.2.0"></script>
+<script src="rasterize-psd.js?v=0.3.0"></script>
+<script src="rasterize.js?v=0.3.0"></script>
+<script src="rasterize-ui.js?v=0.3.0"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
