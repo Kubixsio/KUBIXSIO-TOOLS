@@ -74,14 +74,16 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     });
     await page.goto('http://127.0.0.1:' + server.address().port);
     const frame = page.frameLocator('#plugin'), ui = name => frame.locator('#aiReview' + name);
-    async function reloadPanel() {
+    async function reloadPanel(capture = true) {
       const navigation = page.waitForEvent('framenavigated', candidate => candidate.url().includes('/plugin.html'));
       await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
       await navigation;
+      if (capture) await ui('Capture').click();
     }
     async function previewReady() {
       await page.waitForFunction(() => !document.getElementById('plugin').contentWindow.document.getElementById('aiReviewCapture').disabled);
     }
+    await ui('Capture').click();
     await ui('PreviewStatus').filter({hasText: '64 × 36 px'}).waitFor();
     assert.equal(await ui('Notes').getAttribute('placeholder'), null);
     await ui('KeyInput').fill(key); await ui('SaveKey').click();
@@ -125,11 +127,15 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
     assert.equal(await cards.nth(0).getAttribute('data-status'), 'done');
     assert.equal(await cards.nth(1).getAttribute('data-status'), 'discarded');
     assert.equal(await ui('Notes').inputValue(), 'Zachowaj spokojne kolory.');
+    // The first action after reopening may be Analyze, without a manual preview refresh.
+    await reloadPanel(false);
+    await ui('AccessStatus').filter({hasText:'Połączono'}).waitFor();
     result = noChanges; await ui('Analyze').click(); await ui('Score').filter({hasText:'9.2 / 10'}).waitFor();
     assert.equal(calls.length, 2); assert.notEqual(calls[1].previous.image.dataUrl, calls[1].image.dataUrl);
     assert.deepEqual(calls[1].layerTree.layers.map(l => l.type), ['smart-object', 'text', 'adjustment', 'pixel', 'pixel']);
     assert.notDeepEqual(calls[1].layerTree, calls[0].layerTree, 'Reanalysis reads the current tree instead of restoring the previous one.');
     assert.deepEqual(calls[1].previous.improvements.map(item => item.status), ['done','discarded','pending']);
+    assert.equal(calls[1].notes, 'Zachowaj spokojne kolory.');
     assert.equal(calls[1].discardedImprovements[0].issueKey, 'medium_problem');
     assert.equal(await cards.count(), 0); assert.equal(await ui('NoChanges').isVisible(), true);
     assert.equal(await ui('ImprovementsTitle').isVisible(), false);

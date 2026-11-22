@@ -185,13 +185,16 @@
     status(elements.AnalysisStatus, 'Analizowanie miniaturki...');
     try {
       var notes = elements.Notes.value;
-      await saved(session.setNotes(notes));
       var snapshot = session.getState();
+      if (snapshot.meta) await saved(session.setNotes(notes));
       var captured = await session.capture();
       await saved(session.acceptPreview(captured));
       status(elements.PreviewStatus, captured.meta.name + ' • ' + captured.meta.width + ' × ' + captured.meta.height + ' px');
       // A newly selected document starts its own review and notes.
       if (snapshot.meta && snapshot.meta.documentKey !== captured.meta.documentKey) notes = session.getState().notes;
+      // The first explicit action can restore a saved review without a startup export.
+      if (!snapshot.meta && !notes) notes = session.getState().notes;
+      snapshot = session.getState();
       var body = await preparePayload(snapshot, captured, notes);
       var result = contract.normalizeReview(await request(endpoint, accessKey, body));
       var current = await session.capture({metadataOnly: true});
@@ -237,6 +240,5 @@
       } catch (error) { elements.AccessStatus.textContent = error.code === 'UNAUTHORIZED' ? 'Brak dostępu do Oceny AI' : 'Brak połączenia'; status(elements.AnalysisStatus, error.message, true); }
     }
     if (!connected && !accessKey) elements.KeyForm.hidden = false;
-    if (window.parent !== window) await refreshPreview();
   })();
 })();
