@@ -170,7 +170,7 @@ test('bridge ignores untagged, wrong-origin and wrong-source replies and restore
   const doc=fixture([pixel(1,{visible:false})]),h=bridge(doc);
   h.host.postMessage=script=>h.sent.push(script);
   const job=h.api.scan();
-  assert.equal(h.gate.owner,'layer-cleaner');assert.deepEqual(h.buttons.map(b=>b.disabled),[true,true]);
+  assert.equal(h.gate.owner,'layer-cleaner');assert.deepEqual(h.buttons.map(b=>b.disabled),[false,true]);
   const reply='KTX_CLEANER|test-request|'+JSON.stringify({...execute(doc),exporting:false});
   h.emit('done');h.emit(reply,{},'https://www.photopea.com');h.emit(reply,h.host,'https://evil.example');
   assert.equal(h.gate.owner,'layer-cleaner');

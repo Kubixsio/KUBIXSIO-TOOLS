@@ -146,6 +146,8 @@ async function main() {
     await open.waitFor();
     const frame = page.frames().find(f=>f.url()===pluginUrl);
     await frame.waitForFunction(()=>!document.getElementById('rasterizeScan').disabled&&!window.ktxSaveToOEGate?.owner);
+    const atTop = () => frame.evaluate(() => document.querySelector('.wrap > .section').contains(document.getElementById('rasterize')));
+    assert.equal(await atTop(), true);
     const exec = (script, format) => frame.evaluate(([script,format])=>window.ktxRasterizeTest(script,format),[script,format]);
     const exportDocument = async format => Uint8Array.from(await exec('return true;',format));
     const docs = 'var out=[];for(var i=0;i<app.documents.length;i++){var d=app.documents[i];out.push({source:String(d.source),name:String(d.name)});}return out;';
@@ -187,6 +189,7 @@ async function main() {
     await page.screenshot({path:path.join(output,'030-real-photopea-scan.png')});
 
     await cancel.click();
+    assert.equal(await atTop(), true);
     assert.equal(await ui.locator('#rasterizePanel').isVisible(),false);
     assert.deepEqual(await exec(readState),before);
     assert.deepEqual(await pixels(await exportDocument('png')),await pixels(beforePng));
@@ -196,10 +199,13 @@ async function main() {
     await status.getByText('Warstwy do rasteryzacji: 5',{exact:true}).waitFor();
     for (const checkbox of await checks.all()) await checkbox.uncheck();
     assert.equal(await apply.isEnabled(),false);
+    assert.equal(await atTop(), true);
     for (const id of selected) await ui.locator('#rasterizeList input[value="'+id+'"]').check();
     assert.equal(await apply.innerText(),'RASTERYZUJ 4 WARSTWY');
     await apply.click();
     await status.getByText('Zrasteryzowane warstwy: 4',{exact:true}).waitFor({timeout:45000});
+    assert.equal(await atTop(), false);
+    assert.equal(await frame.evaluate(() => document.getElementById('rasterize').previousElementSibling.id), 'layerCleaner');
     const after=await exec(readState), afterRecords=readLayers((await exportDocument('psd')).buffer);
     report.after=after;
     const expected=before.map(row=>selected.includes(row.id)?{...row,kind:0}:row);
@@ -235,7 +241,6 @@ async function main() {
     await status.getByText('Dokument zmienił się',{exact:false}).waitFor({timeout:45000});
     assert.equal((await exec(readState)).find(row=>row.id===ids.keep).kind,1);
     report.checks.push('Zmiana dokumentu po skanie zablokowała rasteryzację.');
-
     if (externalFile) {
       const activated = await exec('var found=false;for(var i=0;i<app.documents.length;i++){var d=app.documents[i];if(String(d.source)==='+
         JSON.stringify(report.externalInput.documents[0].source)+'){app.activeDocument=d;found=true;}}return found;');
@@ -264,6 +269,10 @@ async function main() {
         report.checks.push('Zaimportowany zewnętrznie podlinkowany Smart Object stał się pikselami z tym samym ID i kompozycją.');
       }
     }
+    await frame.evaluate(() => location.reload());
+    await open.waitFor();
+    assert.equal(await atTop(), true);
+    report.checks.push('Rasteryzuj pozostaje na górze po anulowaniu i odznaczeniu wszystkich; wraca za Layer Cleaner dopiero po sukcesie, a świeży panel ponownie zaczyna od góry.');
     assert.deepEqual(report.errors,[]);
     assert.equal(report.aiRequests,0);
     console.log(report.checks.join('\n'));
