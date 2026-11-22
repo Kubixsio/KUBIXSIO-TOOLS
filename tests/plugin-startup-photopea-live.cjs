@@ -26,6 +26,7 @@ async function main() {
               psd: /saveToOE\("psd"\)/.test(event.data),
               rasterize: event.data.includes('KTX_RASTERIZE|'),
               cleaner: event.data.includes('KTX_CLEANER|')});
+            window.startupScripts.at(-1).identity = event.data.includes('KTX_RASTERIZE_POSITION|');
           }
         });
       } else if (location.href.startsWith('https://kubixsio.github.io/KUBIXSIO-TOOLS/plugin.html')) {
@@ -92,7 +93,7 @@ async function main() {
     const enabledAt = report.states.find(row => disabledAt !== undefined && row.at > disabledAt && !row.noise)?.at;
     report.globalBlockMs = disabledAt !== undefined && enabledAt !== undefined ? enabledAt - disabledAt : 0;
     if (!baseline) {
-      assert.equal(report.scripts.length, 0, 'Startup must send no document scripts to Photopea');
+      assert.equal(report.scripts.filter(row => !row.identity).length, 0, 'Startup may only read document identity');
       assert.ok(report.states.every(row => !row.rasterize && !row.cleaner && !row.noise));
       assert.equal(await ui.locator('.wrap > .section').first().locator('#rasterizeScan').count(), 1);
       await ui.locator('#rasterizeScan').click();

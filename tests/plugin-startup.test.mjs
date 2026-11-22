@@ -7,7 +7,7 @@ import {chromium} from 'playwright';
 const root = new URL('../', import.meta.url);
 const launch = () => chromium.launch({headless:true, executablePath:process.env.KTX_TEST_BROWSER || undefined});
 
-test('startup sends no document scripts; scans start on click, remain local and serialize document commands', async () => {
+test('startup reads only document identity; scans start on click, remain local and serialize document commands', async () => {
   const harness = `<!doctype html><iframe id="plugin" src="/plugin.html" style="width:440px;height:1800px"></iframe>
   <script>
   window.scripts=[];
@@ -25,7 +25,7 @@ test('startup sends no document scripts; scans start on click, remain local and 
       if (name === '/') return response.end(harness);
       if (!/^\/[\w.-]+$/.test(name)) throw Error('Invalid path');
       let body = await readFile(new URL(name.slice(1), root));
-      if (name === '/rasterize.js' || name === '/layer-cleaner.js') {
+      if (name === '/rasterize.js' || name === '/layer-cleaner.js' || name === '/rasterize-position.js') {
         body = body.toString().replace("const origin = 'https://www.photopea.com'", "const origin = 'http://" + request.headers.host + "'");
       }
       response.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
@@ -45,16 +45,17 @@ test('startup sends no document scripts; scans start on click, remain local and 
     const frame = page.frames().find(candidate => candidate.url().endsWith('/plugin.html'));
     await frame.waitForFunction(() => window.ktxRasterize && window.ktxLayerCleaner && window.ktxAiReviewSession);
     await frame.evaluate(() => window.ktxAiReviewSession.initialize());
-    assert.deepEqual(await page.evaluate(() => scripts), []);
+    const documentScripts = () => page.evaluate(() => scripts.filter(script => !script.includes('KTX_RASTERIZE_POSITION|')));
+    assert.deepEqual(await documentScripts(), []);
     assert.equal(await ui.locator('#rasterizeScan').isEnabled(), true);
     assert.equal(await ui.locator('#layerCleanerScan').isEnabled(), true);
     await ui.locator('#noiseButton').click();
     assert.equal(await ui.locator('#noiseButton').getAttribute('aria-expanded'), 'true');
     // Catch unsolicited work scheduled after persistence initialization as well.
     await page.waitForTimeout(600);
-    assert.deepEqual(await page.evaluate(() => scripts), []);
+    assert.deepEqual(await documentScripts(), []);
     for (const [prefix, marker] of [['rasterize','KTX_RASTERIZE|'], ['layerCleaner','KTX_CLEANER|']]) {
-      const before = await page.evaluate(() => scripts.length);
+      const before = (await documentScripts()).length;
       await ui.locator('#' + prefix + 'Scan').evaluate(button => {button.click(); button.click();});
       await frame.waitForFunction(() => !!window.ktxSaveToOEGate.owner);
       assert.equal(await ui.locator('#noiseButton').isEnabled(), true);
@@ -62,8 +63,8 @@ test('startup sends no document scripts; scans start on click, remain local and 
       await ui.locator('#noiseButton').click();
       await frame.evaluate(() => window.postScript('app.echoToOE("QUEUED_DOCUMENT_COMMAND");'));
       await ui.locator('#' + prefix + 'Status').filter({hasText:'Brak otwartego dokumentu'}).waitFor();
-      await page.waitForFunction(expected => scripts.length === expected, before + 2);
-      const sent = await page.evaluate(() => scripts.slice(-2));
+      await page.waitForFunction(expected => scripts.filter(script => !script.includes('KTX_RASTERIZE_POSITION|')).length === expected, before + 2);
+      const sent = (await documentScripts()).slice(-2);
       assert.ok(sent[0].includes(marker));
       assert.equal(sent[1], 'app.echoToOE("QUEUED_DOCUMENT_COMMAND");');
       await ui.locator('#' + prefix + 'Cancel').click();

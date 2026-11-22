@@ -78,6 +78,7 @@ test('frontend: preview, cards, persistence, reanalysis, errors and document/exp
       const navigation = page.waitForEvent('framenavigated', candidate => candidate.url().includes('/plugin.html'));
       await page.evaluate(() => document.getElementById('plugin').contentWindow.location.reload());
       await navigation;
+      await page.frames().find(candidate => candidate.url().includes('/plugin.html')).waitForLoadState('domcontentloaded');
       if (capture) await ui('Capture').click();
     }
     async function previewReady() {
