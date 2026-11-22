@@ -12,13 +12,32 @@
   const wrap = root.closest('.wrap');
   const normalPosition = document.createComment('Rasteryzuj: miejsce w Dodatkach');
   let startSection = null;
+  let currentSource = null;
   if (wrap) {
     root.before(normalPosition);
+    moveToTop();
+  }
+  function moveToTop() {
+    if (!wrap || startSection) return;
     startSection = document.createElement('div');
     startSection.className = 'section';
     startSection.append(root);
     wrap.insertBefore(startSection, wrap.querySelector('.section'));
   }
+  function moveToNormal() {
+    if (!startSection) return;
+    normalPosition.before(root);
+    startSection.remove();
+    startSection = null;
+  }
+  const position = window.ktxRasterizePosition?.observe(state => {
+    if (busy) return;
+    // A URL alone cannot identify a reopened file. Never restore a persisted URL-based mark.
+    if (state.key || state.source !== currentSource) {
+      if (state.used) moveToNormal(); else moveToTop();
+    }
+    currentSource = state.source;
+  });
 
   function updateCount() {
     const count = list.querySelectorAll('input:checked').length;
@@ -95,12 +114,11 @@
     status.textContent = 'Sprawdzam dokument i rasteryzuję wybrane warstwy…';
     try {
       const count = await api.rasterize(selection, ids);
-      status.textContent = 'Zrasteryzowane warstwy: ' + count;
-      if (count > 0 && startSection) {
-        normalPosition.replaceWith(root);
-        startSection.remove();
-        startSection = null;
+      if (count > 0) {
+        moveToNormal();
+        await position?.mark(selection.meta?.source);
       }
+      status.textContent = 'Zrasteryzowane warstwy: ' + count;
     } catch (error) {
       status.textContent = error.message;
     } finally {

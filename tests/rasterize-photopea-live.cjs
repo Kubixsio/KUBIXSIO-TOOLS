@@ -271,8 +271,9 @@ async function main() {
     }
     await frame.evaluate(() => location.reload());
     await open.waitFor();
-    assert.equal(await atTop(), true);
-    report.checks.push('Rasteryzuj pozostaje na górze po anulowaniu i odznaczeniu wszystkich; wraca za Layer Cleaner dopiero po sukcesie, a świeży panel ponownie zaczyna od góry.');
+    await frame.waitForFunction(() => document.getElementById('rasterize').previousElementSibling?.id === 'layerCleaner');
+    assert.equal(await atTop(), false);
+    report.checks.push('Rasteryzuj pozostaje na górze po anulowaniu i odznaczeniu wszystkich; po sukcesie i ponownym otwarciu na tym samym PSD pozostaje za Layer Cleaner.');
     assert.deepEqual(report.errors,[]);
     assert.equal(report.aiRequests,0);
     console.log(report.checks.join('\n'));
