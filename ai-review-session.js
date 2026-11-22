@@ -138,7 +138,8 @@
   }
   window.postScript = function (script) {
     script = String(script == null ? '' : script);
-    if (gate.owner === 'ai-review' || SAVE_TO_OE.test(script) && gate.owner) { gate.queue.push(script); return; }
+    if (gate.owner === 'ai-review' || gate.owner === 'rasterize' || gate.owner === 'layer-cleaner' ||
+        SAVE_TO_OE.test(script) && gate.owner) { gate.queue.push(script); return; }
     if (SAVE_TO_OE.test(script)) { gate.owner = 'external'; gate.externalBufferSeen = gate.externalErrorSeen = false; }
     return originalPostScript(script);
   };

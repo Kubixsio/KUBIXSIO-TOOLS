@@ -271,7 +271,8 @@
         typeof vignetteStage !== 'undefined' && vignetteStage !== 'idle' || window.folderizeBusy) throw fail('BUSY');
     pending = true;
     if (gate) gate.owner = 'layer-cleaner';
-    const buttons = Array.from(document.querySelectorAll('button')).map(button => ({button, disabled: button.disabled}));
+    const buttons = mode === 'scan' ? [] :
+      Array.from(document.querySelectorAll('button')).map(button => ({button, disabled: button.disabled}));
     buttons.forEach(({button}) => { button.disabled = true; });
     const marker = prefix + window.crypto.randomUUID() + '|';
     const id = marker.slice(prefix.length, -1);

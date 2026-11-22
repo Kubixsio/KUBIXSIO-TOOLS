@@ -9,6 +9,16 @@
   const cancel = root.querySelector('#rasterizeCancel');
   const apply = root.querySelector('#rasterizeApply');
   let snapshot = null, busy = false;
+  const wrap = root.closest('.wrap');
+  const normalPosition = document.createComment('Rasteryzuj: miejsce w Dodatkach');
+  let startSection = null;
+  if (wrap) {
+    root.before(normalPosition);
+    startSection = document.createElement('div');
+    startSection.className = 'section';
+    startSection.append(root);
+    wrap.insertBefore(startSection, wrap.querySelector('.section'));
+  }
 
   function updateCount() {
     const count = list.querySelectorAll('input:checked').length;
@@ -86,6 +96,11 @@
     try {
       const count = await api.rasterize(selection, ids);
       status.textContent = 'Zrasteryzowane warstwy: ' + count;
+      if (count > 0 && startSection) {
+        normalPosition.replaceWith(root);
+        startSection.remove();
+        startSection = null;
+      }
     } catch (error) {
       status.textContent = error.message;
     } finally {

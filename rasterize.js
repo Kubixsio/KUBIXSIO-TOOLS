@@ -128,7 +128,8 @@
       return Promise.reject(failure('BUSY'));
     pending = true;
     if (gate) gate.owner = 'rasterize';
-    const buttons = Array.from(document.querySelectorAll('button'), button => ({button, disabled: button.disabled}));
+    const buttons = mode === 'scan' ? [] :
+      Array.from(document.querySelectorAll('button'), button => ({button, disabled: button.disabled}));
     for (const {button} of buttons) button.disabled = true;
     const marker = prefix + window.crypto.randomUUID() + '|';
     return new Promise((resolve, reject) => {

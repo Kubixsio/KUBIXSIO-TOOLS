@@ -1,4 +1,6 @@
-# KUBIXSIO TOOLS 0.3.0
+# KUBIXSIO TOOLS 0.3.1
+
+Patch 0.3.1 uruchamia panel bez odczytu dokumentu i automatycznego eksportu PNG. Podgląd oraz odtworzenie sesji Oceny AI są pobierane przyciskiem ODŚWIEŻ PODGLĄD lub podczas analizy. Rasteryzuj i Layer Cleaner skanują dopiero po kliknięciu i pokazują lokalny stan pracy. Polecenia dokumentowe innych narzędzi czekają na zakończenie skanu we wspólnej kolejce eksportu. Rasteryzuj zaczyna nad pozostałymi sekcjami, po potwierdzonym sukcesie wraca na poprzednie miejsce w Dodatkach; stan pozycji trwa tylko do zamknięcia panelu. Test startu w rzeczywistej Photopea: `node tests/plugin-startup-photopea-live.cjs`.
 
 RASTERYZUJ skanuje dokument i pozwala zamienić wybrane Smart Objecty na warstwy pikselowe. Pomija obiekty ze Smart Filters i obiekty bez jednoznacznie odczytanych metadanych. Do weryfikacji używa tymczasowego eksportu PSD (do 128 MiB) w pamięci panelu. Po zatwierdzeniu sprawdza ponownie dokument i zachowanie masek, stylów oraz relacji clipping. Rasteryzacja korzysta ze standardowej historii Photopea. Test integracyjny można uruchomić poleceniem `node tests/rasterize-photopea-live.cjs`.
 
