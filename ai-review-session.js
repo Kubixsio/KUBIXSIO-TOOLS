@@ -191,7 +191,8 @@
       captureJob = {id: id, phase: 'ping', meta: null, resolve: resolve, reject: reject,
         metadataOnly: !!options.metadataOnly, onStatus: options.onStatus || function () {}, buttons: []};
       gate.owner = 'ai-review';
-      captureJob.buttons = Array.from(document.querySelectorAll('button')).map(function (button) {
+      // Read-only checks show local loading; existing AI callers keep their controls unchanged.
+      captureJob.buttons = (options.disableButtons === false ? [] : Array.from(document.querySelectorAll('button'))).map(function (button) {
         var entry = {button: button, disabled: button.disabled}; button.disabled = true; return entry;
       });
       armTimeout('Photopea nie odpowiedziała. Spróbuj odświeżyć podgląd.', 10000);

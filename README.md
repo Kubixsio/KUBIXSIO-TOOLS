@@ -1,4 +1,6 @@
-# KUBIXSIO TOOLS 0.4.0
+# KUBIXSIO TOOLS 0.5.0
+
+CHECK & PREVIEW jest zwijaną sekcją z aktywnym Thumbnail Preview. Po kliknięciu pobiera jeden aktualny PNG całego dokumentu przez wspólny mechanizm snapshotu. Modal pokazuje jeden wyśrodkowany obraz w czterech rozmiarach: DUŻY, ŚREDNI, MAŁY i BARDZO MAŁY. Strzałki zmieniają wyłącznie rozmiar obrazu w panelu. Każde nowe otwarcie pobiera nowy PNG; zamknięcie zwalnia snapshot. Podgląd zachowuje proporcje i nie modyfikuje PSD ani sesji Oceny AI. Nowa funkcja nie wykonuje operacji dokumentowych przy starcie i podczas eksportu pokazuje lokalny stan ładowania. Grayscale, Blur, Contrast i Focus są widoczne, ale nieaktywne. Pliki: `document-snapshot.js`, `check-preview.js`, `check-preview.css`. Test w prawdziwym Photopea: `node tests/check-preview-photopea-live.cjs`.
 
 LINIE POMOCNICZE dodają KRZYŻ (2 linie w centrum) lub SIATKĘ (4 linie trójpodziału) jako jedną zwykłą, zablokowaną warstwę na samej górze dokumentu. Stały styl: 2 px, jasny cyan `#7DDFFF`, krycie 35%. Kolejne dodanie zastępuje warstwę o dokładnej nazwie `LINIE POMOCNICZE — KRZYŻ` lub `LINIE POMOCNICZE — SIATKA`; grupy i warstwy innych typów pozostają. Pozycje są zaokrąglane do najbliższego piksela, z błędem środka linii maksymalnie 0,5 px. Operacja kończy bieżące zaznaczenie i przywraca wcześniejszą aktywną warstwę, jeśli nadal istnieje. Nowa sekcja nie odczytuje dokumentu przy starcie. Test w prawdziwym Photopea: `node tests/composition-lines-photopea-live.cjs`.
 

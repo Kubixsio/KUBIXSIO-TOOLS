@@ -1,0 +1,25 @@
+.check-preview-section summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin:0}
+.check-preview-section summary::-webkit-details-marker{display:none}
+.check-preview-section summary::after{content:'⌄';font-size:15px;letter-spacing:0}
+.check-preview-section[open] summary::after{content:'⌃'}
+.check-preview-list{display:grid;gap:7px;margin-top:12px}
+.check-preview-list button{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600}
+.check-preview-list button::before{content:'○';color:var(--muted);font-size:17px}
+.check-preview-list button:disabled{opacity:.42;cursor:default}
+.check-preview-list small{margin-left:auto;font-size:10px;font-weight:400;color:var(--muted)}
+#checkPreviewStatus{font-size:11px;color:var(--muted);margin:0}
+#checkPreviewStatus:empty{display:none}
+.check-preview-modal{color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;width:calc(100vw - 24px);max-width:760px;height:calc(100dvh - 28px);max-height:680px;overflow:hidden}
+.check-preview-modal::backdrop{background:rgba(5,8,13,.86)}
+.check-preview-modal[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:14px}
+.check-preview-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.check-preview-heading h2{font-size:12px;letter-spacing:1px;margin:0}
+#checkPreviewClose{width:34px;height:34px;padding:0;text-align:center;font-size:23px;font-weight:400;flex:none}
+.check-preview-stage{display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;background:#111418;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.check-preview-stage img{display:block;max-width:none;max-height:none;object-fit:contain;flex:none;transition:width .18s ease,height .18s ease}
+.check-preview-stage img.check-preview-initial{transition:none}
+.check-preview-navigation{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:10px}
+.check-preview-navigation button{padding:9px 0;text-align:center;font-size:19px}
+.check-preview-navigation button:disabled{opacity:.3;cursor:default}
+#checkPreviewSize{text-align:center;font-size:12px;font-weight:800;white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.check-preview-stage img{transition:none}}
