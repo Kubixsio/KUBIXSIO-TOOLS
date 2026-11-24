@@ -1,4 +1,6 @@
-# KUBIXSIO TOOLS 0.3.2
+# KUBIXSIO TOOLS 0.4.0
+
+LINIE POMOCNICZE dodają KRZYŻ (2 linie w centrum) lub SIATKĘ (4 linie trójpodziału) jako jedną zwykłą, zablokowaną warstwę na samej górze dokumentu. Stały styl: 2 px, jasny cyan `#7DDFFF`, krycie 35%. Kolejne dodanie zastępuje warstwę o dokładnej nazwie `LINIE POMOCNICZE — KRZYŻ` lub `LINIE POMOCNICZE — SIATKA`; grupy i warstwy innych typów pozostają. Pozycje są zaokrąglane do najbliższego piksela, z błędem środka linii maksymalnie 0,5 px. Operacja kończy bieżące zaznaczenie i przywraca wcześniejszą aktywną warstwę, jeśli nadal istnieje. Nowa sekcja nie odczytuje dokumentu przy starcie. Test w prawdziwym Photopea: `node tests/composition-lines-photopea-live.cjs`.
 
 Patch 0.3.2 zachowuje tę pozycję dla instancji lokalnego PSD po zamknięciu panelu. Używa ID z dokumentowanego source (local,X,...) oraz małej listy ID w oknie Photopea. Lekki odczyt źródeł otwartych dokumentów odświeża pozycję przy przełączaniu PSD; pomija czas zajętego eksportu. Nie odczytuje warstw i nie eksportuje obrazów. Nowa instancja dokumentu otrzymuje osobny stan. Dla źródła będącego samym URL, bez ID instancji, pamięć między otwarciami panelu jest wyłączona. Test w prawdziwej Photopea: node tests/rasterize-position-photopea-live.cjs.
 
