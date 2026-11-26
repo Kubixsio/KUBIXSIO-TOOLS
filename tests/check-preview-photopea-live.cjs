@@ -42,7 +42,7 @@ async function main(){
   const stable=()=>frame.waitForFunction(()=>!document.getElementById('checkPreviewImage').getAnimations().some(a=>a.playState==='running'));
   const close=async()=>{await ui.locator('#checkPreviewClose').click();await frame.waitForFunction(()=>!document.getElementById('checkPreviewImage').hasAttribute('src'));};
   await ui.locator('#checkPreviewSection summary').click();
-  assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),3);
+  assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),2);
   await exec("var d=app.documents.add(1280,720,72,'Historia podglądu');var l=d.artLayers.add();l.name='Próba historii';return true;");
   const simpleHistoryBefore=await history();assert.ok(simpleHistoryBefore.length<20);
   await ui.locator('#thumbnailPreviewOpen').click();await ui.locator('#checkPreviewModal').waitFor({state:'visible'});

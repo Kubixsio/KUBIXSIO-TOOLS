@@ -32,3 +32,9 @@
 .grayscale-toggle button{font-size:11px;padding:11px 5px;text-align:center}
 .grayscale-toggle button[aria-pressed="true"]{background:var(--accent);border-color:transparent}
 .grayscale-toggle span{color:var(--muted)}
+#blurStatus{font-size:11px;color:var(--muted);margin:0}
+#blurStatus:empty{display:none}
+#blurClose{width:34px;height:34px;padding:0;text-align:center;font-size:23px;font-weight:400;flex:none}
+#blurImage{transition:none}
+.blur-controls{display:grid;gap:10px}
+#blurLevel{text-align:center;font-size:12px;font-weight:800}
