@@ -23,3 +23,12 @@
 .check-preview-navigation button:disabled{opacity:.3;cursor:default}
 #checkPreviewSize{text-align:center;font-size:12px;font-weight:800;white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.check-preview-stage img{transition:none}}
+#grayscaleStatus{font-size:11px;color:var(--muted);margin:0}
+#grayscaleStatus:empty{display:none}
+#grayscaleClose{width:34px;height:34px;padding:0;text-align:center;font-size:23px;font-weight:400;flex:none}
+#grayscaleImage{transition:none}
+#grayscaleImage.grayscale-active{filter:grayscale(1)}
+.grayscale-toggle{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:9px}
+.grayscale-toggle button{font-size:11px;padding:11px 5px;text-align:center}
+.grayscale-toggle button[aria-pressed="true"]{background:var(--accent);border-color:transparent}
+.grayscale-toggle span{color:var(--muted)}
