@@ -43,8 +43,8 @@ test('CHECK & PREVIEW: shared PNG, navigation, read-only session isolation and r
     await t.test('startup exports nothing and future checks are disabled',async()=>{
       assert.equal(await exports(),0);assert.equal(await ui.locator('#checkPreviewSection').getAttribute('open'),null);
       await ui.locator('#checkPreviewSection summary').click();
-      assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),3);
-      for(const name of ['Blur Check','Contrast Check','Focus Preview'])assert.ok(await ui.getByRole('button',{name:new RegExp(name)}).isDisabled());
+      assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),2);
+      for(const name of ['Contrast Check','Focus Preview'])assert.ok(await ui.getByRole('button',{name:new RegExp(name)}).isDisabled());
       assert.equal(await exports(),0);
     });
     await t.test('one click captures one PNG, opens DUŻY and keeps other tools enabled during loading',async()=>{
