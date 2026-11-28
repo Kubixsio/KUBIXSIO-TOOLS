@@ -27,11 +27,11 @@ test('Grayscale Check: actual rendered pixels, one snapshot, read-only state and
   const exports=()=>page.evaluate(()=>window.exports);
   const layout=()=>frame.evaluate(()=>{const box=id=>{const r=document.getElementById(id).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {modal:box('grayscaleModal'),stage:box('grayscaleStage'),image:box('grayscaleImage'),controls:box('grayscaleOriginal')};});
   const pixel=async()=>frame.evaluate(async bytes=>{const bitmap=await createImageBitmap(new Blob([Uint8Array.from(bytes)],{type:'image/png'}));const c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;const x=c.getContext('2d');x.drawImage(bitmap,0,0);return Array.from(x.getImageData(Math.floor(c.width/2),Math.floor(c.height/2),1,1).data);},Array.from(await image.screenshot()));
-  await t.test('startup has no snapshot or grayscale work; only two future checks remain disabled',async()=>{
+  await t.test('startup has no snapshot or grayscale work; only Focus Preview remains disabled',async()=>{
     assert.equal(await exports(),0);assert.equal(await image.getAttribute('src'),null);assert.equal(await image.getAttribute('class'),null);
     await ui.locator('#checkPreviewSection summary').click();assert.equal(await ui.locator('#grayscaleCheckOpen').isEnabled(),true);
     assert.equal(await ui.locator('#thumbnailPreviewOpen').isEnabled(),true);
-    assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),2);
+    assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),1);
   });
   await t.test('click obtains one PNG and uses a local loading state',async()=>{
     await page.evaluate(()=>delay=250);await ui.locator('#grayscaleCheckOpen').evaluate(b=>{b.click();b.click();});

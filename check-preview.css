@@ -38,3 +38,9 @@
 #blurImage{transition:none}
 .blur-controls{display:grid;gap:10px}
 #blurLevel{text-align:center;font-size:12px;font-weight:800}
+#contrastStatus{font-size:11px;color:var(--muted);margin:0}
+#contrastStatus:empty{display:none}
+#contrastClose{width:34px;height:34px;padding:0;text-align:center;font-size:23px;font-weight:400;flex:none}
+#contrastImage{transition:none}
+.contrast-controls{display:grid;gap:10px}
+#contrastLevel{text-align:center;font-size:12px;font-weight:800}

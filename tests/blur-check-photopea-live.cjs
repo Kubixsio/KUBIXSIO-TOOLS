@@ -34,7 +34,7 @@ async function main(){
     for(let p=Math.floor(c.width*.32);p<c.width*.6;p++){const r=d[(y*c.width+p)*4];if(low<0&&r>=41)low=p;if(high<0&&r>=209)high=p;}
     return {edge:high-low,center:Array.from(x.getImageData(Math.floor(c.width*.6),y,1,1).data),background:Array.from(x.getImageData(Math.floor(c.width*.94),y,1,1).data)};
   },Array.from(await ui.locator('#blurImage').screenshot()));
-  assert.equal(await exports(),0);await ui.locator('#checkPreviewSection summary').click();assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),2);
+  assert.equal(await exports(),0);await ui.locator('#checkPreviewSection summary').click();assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),1);
   await exec("var d=app.documents.add(1280,720,72,'Historia blur');var l=d.artLayers.add();l.name='Historia';return true;");
   const simpleBefore=await state();assert.ok(simpleBefore.history<20);await open();await ui.locator('#blurOriginal').click();await ui.locator('#blurEnabled').click();await close();assert.deepEqual(await state(),simpleBefore);report.historyProof={before:simpleBefore.history,after:simpleBefore.history};
   for(const [w,h]of [[1920,1080],[1080,1080],[1080,1920]]){
