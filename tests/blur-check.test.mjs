@@ -34,10 +34,10 @@ test('Blur Check: rendered blur strengths, original memory, one snapshot and rea
     return {edge:high-low,corner:at(2,2),center:at(Math.floor(c.width*.6),y)};
   },Array.from(await image.screenshot()));
   let light,medium,strong,base,scriptCount,url;
-  await t.test('startup does no export or blur and only Contrast/Focus remain disabled',async()=>{
+  await t.test('startup does no export or blur and only Focus remains disabled',async()=>{
     assert.equal(await count(),0);assert.equal(await image.getAttribute('src'),null);assert.equal(await modal.isVisible(),false);
     await ui.locator('#checkPreviewSection summary').click();assert.equal(await ui.locator('#blurCheckOpen').isEnabled(),true);
-    assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),2);
+    assert.equal(await ui.locator('#checkPreviewSection button:disabled').count(),1);
   });
   await t.test('one click captures one PNG and starts LEKKI with local loading only',async()=>{
     await page.evaluate(()=>delay=250);await ui.locator('#blurCheckOpen').evaluate(b=>{b.click();b.click();});

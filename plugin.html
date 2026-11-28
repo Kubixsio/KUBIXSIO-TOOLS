@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="plugin-v71-assets.css?v=91">
 <link rel="stylesheet" href="ai-review.css?v=0.0.1">
 <link rel="stylesheet" href="layer-cleaner.css?v=0.2.0">
-<link rel="stylesheet" href="check-preview.css?v=0.5.2">
+<link rel="stylesheet" href="check-preview.css?v=0.5.3">
 <style>
   .guide-thumb{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;transition:filter .15s ease,transform .15s ease}
   .guide-thumb:hover{filter:brightness(1.08)}
@@ -62,11 +62,12 @@
       <button type="button" id="thumbnailPreviewOpen">Thumbnail Preview</button>
       <button type="button" id="grayscaleCheckOpen">Grayscale Check</button>
       <button type="button" id="blurCheckOpen">Blur Check</button>
-      <button type="button" disabled>Contrast Check<small>później</small></button>
+      <button type="button" id="contrastCheckOpen">Contrast Check</button>
       <button type="button" disabled>Focus Preview<small>później</small></button>
       <p id="checkPreviewStatus" role="status" aria-live="polite"></p>
       <p id="grayscaleStatus" role="status" aria-live="polite"></p>
       <p id="blurStatus" role="status" aria-live="polite"></p>
+      <p id="contrastStatus" role="status" aria-live="polite"></p>
     </div>
   </details>
   <div class="section"><p class="section-title">DODATKI</p><div class="grid">
@@ -222,7 +223,7 @@
     <span class="hint" style="margin-top:8px">Baza poglądowa — obrót postaci względem źródła światła zmienia układ świateł, cieni i linii światła. Kliknij obraz, aby powiększyć.</span>
   </div>
   <div class="status"><span id="dot" class="dot"></span><span id="status">Panel gotowy</span></div>
-  <div class="footer">KUBIXSIO TOOLS • 0.5.2</div>
+  <div class="footer">KUBIXSIO TOOLS • 0.5.3</div>
 </div>
 <dialog id="checkPreviewModal" class="check-preview-modal" aria-labelledby="checkPreviewTitle">
   <div class="check-preview-heading"><h2 id="checkPreviewTitle">THUMBNAIL PREVIEW</h2><button type="button" id="checkPreviewClose" aria-label="Zamknij podgląd">×</button></div>
@@ -246,6 +247,14 @@
   <div class="blur-controls">
     <div class="grayscale-toggle" role="group" aria-label="Tryb podglądu blur"><button type="button" id="blurOriginal" aria-pressed="false">ORYGINAŁ</button><span aria-hidden="true">↔</span><button type="button" id="blurEnabled" aria-pressed="true">BLUR</button></div>
     <div class="check-preview-navigation" role="group" aria-label="Siła rozmycia"><button type="button" id="blurLeft" aria-label="Słabsze rozmycie" disabled>←</button><span id="blurLevel" aria-live="polite">LEKKI</span><button type="button" id="blurRight" aria-label="Mocniejsze rozmycie">→</button></div>
+  </div>
+</dialog>
+<dialog id="contrastModal" class="check-preview-modal" aria-labelledby="contrastTitle">
+  <div class="check-preview-heading"><h2 id="contrastTitle">CONTRAST CHECK</h2><button type="button" id="contrastClose" aria-label="Zamknij Contrast Check">×</button></div>
+  <div id="contrastStage" class="check-preview-stage"><img id="contrastImage" alt="Podgląd stref jasności całej kompozycji" draggable="false"></div>
+  <div class="contrast-controls">
+    <div class="grayscale-toggle" role="group" aria-label="Tryb podglądu stref jasności"><button type="button" id="contrastOriginal" aria-pressed="false">ORYGINAŁ</button><span aria-hidden="true">↔</span><button type="button" id="contrastEnabled" aria-pressed="true">CONTRAST</button></div>
+    <div class="check-preview-navigation" role="group" aria-label="Uproszczenie stref jasności"><button type="button" id="contrastLeft" aria-label="Mniejsze uproszczenie" disabled>←</button><span id="contrastLevel" aria-live="polite">LEKKI</span><button type="button" id="contrastRight" aria-label="Większe uproszczenie">→</button></div>
   </div>
 </dialog>
 <div id="assetsPreview" class="assets-preview assets-hidden" role="dialog" aria-modal="true" aria-label="Podgląd assetu">
@@ -283,6 +292,7 @@
 <script src="check-preview.js?v=0.5.0"></script>
 <script src="grayscale-check.js?v=0.5.1"></script>
 <script src="blur-check.js?v=0.5.2"></script>
+<script src="contrast-check.js?v=0.5.3"></script>
 <script>
 (function(){
   var scale=1,panX=0,panY=0,dragging=false,moved=false,startX=0,startY=0,startPanX=0,startPanY=0;var box,stage,img;
